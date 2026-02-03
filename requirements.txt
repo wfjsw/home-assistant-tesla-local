@@ -1,0 +1,10 @@
+# Runtime dependencies (also in manifest.json)
+bleak>=0.21.0
+bleak-retry-connector>=3.1.0
+cryptography>=41.0.0
+
+# Development dependencies
+homeassistant>=2024.1.0
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-homeassistant-custom-component>=0.13.0

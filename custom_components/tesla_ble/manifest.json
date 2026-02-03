@@ -1,0 +1,21 @@
+{
+  "domain": "tesla_ble",
+  "name": "Tesla BLE",
+  "codeowners": ["@home-assistant-tesla-local"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/home-assistant-tesla-local/home-assistant-tesla-ble",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/home-assistant-tesla-local/home-assistant-tesla-ble/issues",
+  "requirements": [
+    "bleak>=0.21.0",
+    "bleak-retry-connector>=3.1.0",
+    "cryptography>=41.0.0"
+  ],
+  "bluetooth": [
+    {
+      "service_uuid": "00000211-b2d1-43f0-9b88-960cebf8b91e"
+    }
+  ],
+  "version": "1.0.0"
+}

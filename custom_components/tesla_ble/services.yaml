@@ -1,0 +1,48 @@
+wake:
+  name: Wake Vehicle
+  description: Wake up the Tesla vehicle.
+  target:
+    device:
+      integration: tesla_ble
+
+lock:
+  name: Lock Vehicle
+  description: Lock the Tesla vehicle.
+  target:
+    device:
+      integration: tesla_ble
+
+unlock:
+  name: Unlock Vehicle
+  description: Unlock the Tesla vehicle.
+  target:
+    device:
+      integration: tesla_ble
+
+open_trunk:
+  name: Open Trunk
+  description: Open the rear trunk.
+  target:
+    device:
+      integration: tesla_ble
+
+open_frunk:
+  name: Open Frunk
+  description: Open the front trunk (frunk).
+  target:
+    device:
+      integration: tesla_ble
+
+open_charge_port:
+  name: Open Charge Port
+  description: Open the charge port door.
+  target:
+    device:
+      integration: tesla_ble
+
+close_charge_port:
+  name: Close Charge Port
+  description: Close the charge port door.
+  target:
+    device:
+      integration: tesla_ble

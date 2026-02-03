@@ -1,0 +1,81 @@
+{
+  "config": {
+    "flow_title": "Tesla BLE - {name}",
+    "step": {
+      "user": {
+        "title": "Select Tesla Vehicle",
+        "description": "Select your Tesla vehicle from the discovered devices below. Make sure your vehicle is nearby and awake.",
+        "data": {
+          "address": "Vehicle"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Confirm Tesla Vehicle",
+        "description": "A Tesla vehicle was discovered:\n\n**Name:** {name}\n**Address:** {address}\n\nDo you want to set up this vehicle?"
+      },
+      "generate_key": {
+        "title": "Generate or Import Key",
+        "description": "To communicate with your Tesla, a cryptographic key pair is required.\n\n**Generate new key:** Create a new key pair for this Home Assistant instance.\n**Import existing key:** Use an existing private key (e.g., from another Home Assistant installation).",
+        "data": {
+          "generate_new": "Generate new key"
+        }
+      },
+      "import_key": {
+        "title": "Import Existing Key",
+        "description": "Enter your existing private key in hexadecimal format.",
+        "data": {
+          "private_key": "Private Key (hex)"
+        }
+      },
+      "pair_key": {
+        "title": "Pair Key with Vehicle",
+        "description": "Enter your vehicle's VIN (Vehicle Identification Number) and a name for this key.\n\nThe VIN can be found in the Tesla app or on your vehicle registration.\n\n**Your public key:**\n`{public_key}`",
+        "data": {
+          "vin": "Vehicle Identification Number (VIN)",
+          "key_name": "Key Name"
+        }
+      },
+      "tap_key_card": {
+        "title": "Tap Key Card",
+        "description": "To authorize the new key **\"{key_name}\"**, please:\n\n1. Sit inside your vehicle\n2. Place your Tesla key card on the center console\n3. Wait for confirmation (up to 30 seconds)\n\nPress **Submit** after tapping your key card."
+      },
+      "already_paired": {
+        "title": "Verify Existing Key",
+        "description": "If your key is already paired with the vehicle, enter the VIN to verify the connection.",
+        "data": {
+          "vin": "Vehicle Identification Number (VIN)",
+          "key_name": "Key Name"
+        }
+      }
+    },
+    "error": {
+      "no_devices_found": "No Tesla vehicles found. Make sure your vehicle is nearby, awake, and Bluetooth is enabled.",
+      "no_device_selected": "Please select a device.",
+      "cannot_connect": "Could not connect to the vehicle. Make sure it is nearby and awake.",
+      "invalid_key": "Invalid private key format. Please enter a valid hexadecimal string.",
+      "invalid_vin": "Invalid VIN. The VIN must be exactly 17 characters.",
+      "pairing_failed": "Failed to pair the key with the vehicle.",
+      "timeout": "Timed out waiting for key card tap. Please try again.",
+      "key_not_added": "Key was not added to the vehicle. Make sure you tapped the key card on the center console.",
+      "key_not_paired": "The key is not paired with this vehicle. Please pair the key first.",
+      "verification_failed": "Failed to verify the key with the vehicle."
+    },
+    "abort": {
+      "already_configured": "This vehicle is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tesla BLE Options",
+        "description": "Configure polling options for your Tesla vehicle.\n\nPolling interval determines how often the integration connects to your vehicle to check its status. Lower values provide more frequent updates but may impact vehicle battery.",
+        "data": {
+          "scan_interval": "Polling interval (30-600 seconds)"
+        },
+        "data_description": {
+          "scan_interval": "How often to poll the vehicle for status updates. Default is 60 seconds."
+        }
+      }
+    }
+  }
+}
