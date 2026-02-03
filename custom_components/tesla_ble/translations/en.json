@@ -4,9 +4,17 @@
     "step": {
       "user": {
         "title": "Select Tesla Vehicle",
-        "description": "Select your Tesla vehicle from the discovered devices below. Make sure your vehicle is nearby and awake.",
+        "description": "Select your Tesla vehicle from the discovered devices below, or enter your VIN manually to search.\n\nMake sure your vehicle is nearby and awake.",
         "data": {
-          "address": "Vehicle"
+          "address": "Vehicle",
+          "manual_entry": "Enter VIN manually"
+        }
+      },
+      "manual_vin": {
+        "title": "Enter VIN",
+        "description": "Enter your vehicle's VIN (Vehicle Identification Number) to search for it.\n\nThe VIN can be found in the Tesla app, on your vehicle registration, or on the dashboard (visible through the windshield).",
+        "data": {
+          "vin": "Vehicle Identification Number (VIN)"
         }
       },
       "bluetooth_confirm": {
@@ -49,8 +57,9 @@
       }
     },
     "error": {
-      "no_devices_found": "No Tesla vehicles found. Make sure your vehicle is nearby, awake, and Bluetooth is enabled.",
-      "no_device_selected": "Please select a device.",
+      "no_devices_found": "No Tesla vehicles found nearby. You can enter your VIN manually to search, or make sure your vehicle is nearby and awake.",
+      "no_device_selected": "Please select a device or choose to enter VIN manually.",
+      "vehicle_not_found": "Could not find a vehicle with this VIN nearby. Make sure your vehicle is within Bluetooth range and awake.",
       "cannot_connect": "Could not connect to the vehicle. Make sure it is nearby and awake.",
       "invalid_key": "Invalid private key format. Please enter a valid hexadecimal string.",
       "invalid_vin": "Invalid VIN. The VIN must be exactly 17 characters.",

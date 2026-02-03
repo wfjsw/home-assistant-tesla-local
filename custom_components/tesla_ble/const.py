@@ -11,6 +11,33 @@ TESLA_SERVICE_UUID: Final = "00000211-b2d1-43f0-9b88-960cebf8b91e"
 TESLA_TX_CHAR_UUID: Final = "00000212-b2d1-43f0-9b88-960cebf8b91e"
 TESLA_RX_CHAR_UUID: Final = "00000213-b2d1-43f0-9b88-960cebf8b91e"
 
+# Alternative service UUID that some Tesla vehicles advertise
+TESLA_ALT_SERVICE_UUID: Final = "00001122-0000-1000-8000-00805f9b34fb"
+
+# All service UUIDs to look for
+TESLA_SERVICE_UUIDS: Final = frozenset([
+    TESLA_SERVICE_UUID.lower(),
+    TESLA_ALT_SERVICE_UUID.lower(),
+])
+
+
+def is_tesla_device_name(name: str | None) -> bool:
+    """Check if a BLE device name matches Tesla's naming pattern.
+
+    Tesla vehicles broadcast as "S" + 16 hex chars (SHA1 of VIN) + "C"
+    Example: "S1a2b3c4d5e6f7a8bC"
+    """
+    if not name or len(name) != 18:
+        return False
+    if not name.startswith("S") or not name.endswith("C"):
+        return False
+    # Check middle 16 chars are hex
+    try:
+        int(name[1:17], 16)
+        return True
+    except ValueError:
+        return False
+
 # Protocol constants
 MAX_MESSAGE_SIZE: Final = 1024
 RX_TIMEOUT: Final = 1.0  # seconds

@@ -15,6 +15,7 @@ from .const import (
     DOMAIN,
     DEFAULT_SCAN_INTERVAL,
     TESLA_SERVICE_UUID,
+    TESLA_ALT_SERVICE_UUID,
 )
 from .protocol import TeslaBLEVehicle, VehicleState
 
@@ -48,7 +49,7 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
         self.vehicle = vehicle
         self.vin = vin
         self._ble_device: BLEDevice | None = None
-        self._cancel_bluetooth_callback: callback | None = None
+        self._cancel_bluetooth_callbacks: list[callback] = []
         self._connection_lock = asyncio.Lock()
 
         # Diagnostic data
@@ -86,6 +87,10 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
         change: bluetooth.BluetoothChange,
     ) -> None:
         """Handle Bluetooth advertisement events."""
+        # Only process events for our device
+        if self._ble_device and service_info.address != self._ble_device.address:
+            return
+
         import time
 
         _LOGGER.debug(
@@ -102,17 +107,20 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
         self.last_seen = time.time()
 
         # Notify listeners of the update (for RSSI sensor)
-        self.async_set_updated_data(self.data) if self.data else None
+        if self.data:
+            self.async_set_updated_data(self.data)
 
     async def async_start(self) -> None:
         """Start the coordinator and register for Bluetooth updates."""
-        # Register callback for Bluetooth advertisements
-        self._cancel_bluetooth_callback = bluetooth.async_register_callback(
-            self.hass,
-            self._async_handle_bluetooth_event,
-            BluetoothCallbackMatcher(service_uuid=TESLA_SERVICE_UUID),
-            bluetooth.BluetoothScanningMode.ACTIVE,
-        )
+        # Register callbacks for both known Tesla service UUIDs
+        for service_uuid in [TESLA_SERVICE_UUID, TESLA_ALT_SERVICE_UUID]:
+            cancel = bluetooth.async_register_callback(
+                self.hass,
+                self._async_handle_bluetooth_event,
+                BluetoothCallbackMatcher(service_uuid=service_uuid),
+                bluetooth.BluetoothScanningMode.ACTIVE,
+            )
+            self._cancel_bluetooth_callbacks.append(cancel)
 
         # Try to find device via Bluetooth
         service_info = bluetooth.async_last_service_info(
@@ -123,9 +131,9 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
 
     async def async_stop(self) -> None:
         """Stop the coordinator and unregister callbacks."""
-        if self._cancel_bluetooth_callback:
-            self._cancel_bluetooth_callback()
-            self._cancel_bluetooth_callback = None
+        for cancel in self._cancel_bluetooth_callbacks:
+            cancel()
+        self._cancel_bluetooth_callbacks.clear()
 
         await self.vehicle.disconnect()
 

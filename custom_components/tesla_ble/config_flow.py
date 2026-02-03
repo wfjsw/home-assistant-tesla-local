@@ -25,9 +25,10 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     MAX_SCAN_INTERVAL,
-    TESLA_SERVICE_UUID,
+    TESLA_SERVICE_UUIDS,
+    is_tesla_device_name,
 )
-from .protocol.crypto import generate_key_pair, vin_from_local_name
+from .protocol.crypto import generate_key_pair, vin_from_local_name, compute_vin_hash
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,10 +89,14 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step - scan for devices."""
+        """Handle the initial step - scan for devices or enter VIN manually."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            # Check if user wants to enter VIN manually
+            if user_input.get("manual_entry"):
+                return await self.async_step_manual_vin()
+
             address = user_input.get(CONF_ADDRESS)
             if address and address in self._discovered_devices:
                 self._discovery_info = self._discovered_devices[address]
@@ -111,23 +116,42 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Scan for Tesla BLE devices
         self._discovered_devices = {}
-        scanner = bluetooth.async_get_scanner(self.hass)
 
-        # Get all discovered devices with Tesla service UUID
+        # Get all discovered devices - check service UUIDs and name pattern
         for service_info in bluetooth.async_discovered_service_info(self.hass, True):
-            if TESLA_SERVICE_UUID.lower() in [
-                str(uuid).lower() for uuid in service_info.service_uuids
-            ]:
+            # Check if any service UUID matches Tesla's known UUIDs
+            service_uuids_lower = {str(uuid).lower() for uuid in service_info.service_uuids}
+            has_tesla_uuid = bool(service_uuids_lower & TESLA_SERVICE_UUIDS)
+
+            # Check if name matches Tesla pattern (S<16 hex chars>C)
+            has_tesla_name = is_tesla_device_name(service_info.name)
+
+            if has_tesla_uuid or has_tesla_name:
                 self._discovered_devices[service_info.address] = service_info
+                _LOGGER.debug(
+                    "Found Tesla device: %s (name=%s, uuid_match=%s, name_match=%s)",
+                    service_info.address,
+                    service_info.name,
+                    has_tesla_uuid,
+                    has_tesla_name,
+                )
 
         if not self._discovered_devices:
+            # No devices found - offer manual VIN entry
             return self.async_show_form(
                 step_id="user",
-                data_schema=vol.Schema({}),
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("manual_entry", default=True): bool,
+                    }
+                ),
                 errors={"base": "no_devices_found"},
+                description_placeholders={
+                    "manual_hint": "Enter your VIN to search for your vehicle.",
+                },
             )
 
-        # Build device selection list
+        # Build device selection list with manual entry option
         device_options = {
             addr: f"{info.name or 'Unknown'} ({addr})"
             for addr, info in self._discovered_devices.items()
@@ -137,7 +161,74 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ADDRESS): vol.In(device_options),
+                    vol.Optional(CONF_ADDRESS): vol.In(device_options),
+                    vol.Optional("manual_entry", default=False): bool,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_manual_vin(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle manual VIN entry to find vehicle."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            vin = user_input.get(CONF_VIN, "").strip().upper()
+
+            if not vin or len(vin) != 17:
+                errors[CONF_VIN] = "invalid_vin"
+            else:
+                self._vin = vin
+
+                # Compute expected BLE local name from VIN
+                expected_name = compute_vin_hash(vin)
+                _LOGGER.debug("Looking for vehicle with BLE name: %s", expected_name)
+
+                # Search for device by expected name or service UUID
+                found_device = None
+                for service_info in bluetooth.async_discovered_service_info(
+                    self.hass, True
+                ):
+                    # Match by exact name (VIN hash)
+                    if service_info.name == expected_name:
+                        found_device = service_info
+                        _LOGGER.info("Found vehicle by VIN hash: %s", expected_name)
+                        break
+
+                    # Check service UUIDs
+                    service_uuids_lower = {
+                        str(uuid).lower() for uuid in service_info.service_uuids
+                    }
+                    has_tesla_uuid = bool(service_uuids_lower & TESLA_SERVICE_UUIDS)
+
+                    # Check name pattern
+                    has_tesla_name = is_tesla_device_name(service_info.name)
+
+                    if has_tesla_uuid or has_tesla_name:
+                        # Could be our vehicle - save as potential match
+                        if found_device is None:
+                            found_device = service_info
+
+                if found_device:
+                    self._discovery_info = found_device
+                    self._address = found_device.address
+                    self._name = found_device.name
+
+                    await self.async_set_unique_id(found_device.address)
+                    self._abort_if_unique_id_configured()
+
+                    return await self.async_step_generate_key()
+                else:
+                    # Vehicle not found - allow proceeding anyway for later setup
+                    errors["base"] = "vehicle_not_found"
+
+        return self.async_show_form(
+            step_id="manual_vin",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_VIN): str,
                 }
             ),
             errors=errors,

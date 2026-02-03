@@ -16,7 +16,8 @@ from .const import (
     CONF_PRIVATE_KEY,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
-    TESLA_SERVICE_UUID,
+    TESLA_SERVICE_UUIDS,
+    is_tesla_device_name,
 )
 from .coordinator import TeslaBLECoordinator
 from .protocol import TeslaBLEVehicle
@@ -56,14 +57,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     if not ble_device:
-        # Try to find by service UUID
+        # Try to find by address, service UUID, or name pattern
         service_infos = bluetooth.async_discovered_service_info(hass, True)
         for service_info in service_infos:
-            if (
-                service_info.address == address
-                or TESLA_SERVICE_UUID.lower()
-                in [str(uuid).lower() for uuid in service_info.service_uuids]
-            ):
+            # Match by address
+            if service_info.address == address:
+                ble_device = service_info.device
+                break
+
+            # Match by service UUID
+            service_uuids_lower = {str(uuid).lower() for uuid in service_info.service_uuids}
+            if service_uuids_lower & TESLA_SERVICE_UUIDS:
+                ble_device = service_info.device
+                break
+
+            # Match by Tesla name pattern
+            if is_tesla_device_name(service_info.name):
                 ble_device = service_info.device
                 break
 
