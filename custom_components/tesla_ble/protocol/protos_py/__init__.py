@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from importlib import import_module
 import sys
+from types import ModuleType
 
 # List of generated modules in this package
-_modules = [
+__all__ = [
     "car_server_pb2",
     "common_pb2",
     "errors_pb2",
@@ -22,21 +23,3 @@ _modules = [
     "vcsec_pb2",
     "vehicle_pb2",
 ]
-
-# Import each module relatively and also register the short module name
-# in sys.modules so generated code that does `import signatures_pb2`
-# will find this package's module.
-for _m in _modules:
-    fullname = f"{__name__}.{_m}"
-    try:
-        mod = import_module(f".{_m}", __name__)
-    except Exception:
-        # Fallback: try absolute import if relative import fails
-        mod = import_module(_m)
-    # Expose as attribute on the package
-    globals()[_m] = mod
-    # Register short name so top-level imports resolve
-    if _m not in sys.modules:
-        sys.modules[_m] = mod
-
-__all__ = _modules

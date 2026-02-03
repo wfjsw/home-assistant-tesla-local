@@ -22,9 +22,9 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-import vehicle_pb2 as vehicle__pb2
-import signatures_pb2 as signatures__pb2
-import common_pb2 as common__pb2
+from . import vehicle_pb2 as vehicle__pb2
+from . import signatures_pb2 as signatures__pb2
+from . import common_pb2 as common__pb2
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
