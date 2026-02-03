@@ -46,3 +46,120 @@ close_charge_port:
   target:
     device:
       integration: tesla_ble
+
+set_temperature:
+  name: Set Temperature
+  description: Set cabin temperature for driver and passenger.
+  target:
+    device:
+      integration: tesla_ble
+  fields:
+    driver_temp:
+      name: Driver Temperature
+      description: Driver side temperature in Celsius.
+      required: true
+      example: 22.0
+      selector:
+        number:
+          min: 15
+          max: 28
+          step: 0.5
+          unit_of_measurement: "°C"
+    passenger_temp:
+      name: Passenger Temperature
+      description: Passenger side temperature in Celsius (optional, defaults to driver temp).
+      required: false
+      example: 21.0
+      selector:
+        number:
+          min: 15
+          max: 28
+          step: 0.5
+          unit_of_measurement: "°C"
+
+set_sentry_mode:
+  name: Set Sentry Mode
+  description: Enable or disable sentry mode.
+  target:
+    device:
+      integration: tesla_ble
+  fields:
+    enabled:
+      name: Enabled
+      description: True to enable, false to disable.
+      required: true
+      example: true
+      selector:
+        boolean:
+
+set_charge_limit:
+  name: Set Charge Limit
+  description: Set the charge limit percentage (50-100%).
+  target:
+    device:
+      integration: tesla_ble
+  fields:
+    percent:
+      name: Charge Limit
+      description: Charge limit percentage.
+      required: true
+      example: 80
+      selector:
+        number:
+          min: 50
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+set_charging_amps:
+  name: Set Charging Amps
+  description: Set the charging current in amps.
+  target:
+    device:
+      integration: tesla_ble
+  fields:
+    amps:
+      name: Charging Amps
+      description: Charging current in amps.
+      required: true
+      example: 32
+      selector:
+        number:
+          min: 1
+          max: 48
+          step: 1
+          unit_of_measurement: "A"
+
+set_volume:
+  name: Set Volume
+  description: Set media volume (0.0-10.0).
+  target:
+    device:
+      integration: tesla_ble
+  fields:
+    volume:
+      name: Volume
+      description: Volume level (0.0 to 10.0).
+      required: true
+      example: 5.0
+      selector:
+        number:
+          min: 0.0
+          max: 10.0
+          step: 0.5
+
+set_steering_wheel_heater:
+  name: Set Steering Wheel Heater
+  description: Turn steering wheel heater on or off.
+  target:
+    device:
+      integration: tesla_ble
+  fields:
+    enabled:
+      name: Enabled
+      description: True to enable, false to disable.
+      required: true
+      example: true
+      selector:
+        boolean:
+

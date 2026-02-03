@@ -24,10 +24,59 @@ SERVICE_OPEN_TRUNK = "open_trunk"
 SERVICE_OPEN_FRUNK = "open_frunk"
 SERVICE_OPEN_CHARGE_PORT = "open_charge_port"
 SERVICE_CLOSE_CHARGE_PORT = "close_charge_port"
+SERVICE_SET_TEMPERATURE = "set_temperature"
+SERVICE_SET_SENTRY_MODE = "set_sentry_mode"
+SERVICE_SET_CHARGE_LIMIT = "set_charge_limit"
+SERVICE_SET_CHARGING_AMPS = "set_charging_amps"
+SERVICE_SET_VOLUME = "set_volume"
+SERVICE_SET_STEERING_WHEEL_HEATER = "set_steering_wheel_heater"
 
 SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required("device_id"): cv.string,
+    }
+)
+
+SERVICE_SET_TEMPERATURE_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Required("driver_temp"): vol.Coerce(float),
+        vol.Optional("passenger_temp"): vol.Coerce(float),
+    }
+)
+
+SERVICE_SET_SENTRY_MODE_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Required("enabled"): cv.boolean,
+    }
+)
+
+SERVICE_SET_CHARGE_LIMIT_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Required("percent"): vol.All(vol.Coerce(int), vol.Range(min=50, max=100)),
+    }
+)
+
+SERVICE_SET_CHARGING_AMPS_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Required("amps"): vol.Coerce(int),
+    }
+)
+
+SERVICE_SET_VOLUME_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Required("volume"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+    }
+)
+
+SERVICE_SET_STEERING_WHEEL_HEATER_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Required("enabled"): cv.boolean,
     }
 )
 
@@ -104,6 +153,55 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if coordinator:
             await coordinator.async_close_charge_port()
 
+    async def handle_set_temperature(call: ServiceCall) -> None:
+        """Handle set temperature service call."""
+        device_id = call.data["device_id"]
+        driver_temp = call.data["driver_temp"]
+        passenger_temp = call.data.get("passenger_temp")
+        coordinator = _get_coordinator(hass, device_id)
+        if coordinator:
+            await coordinator.async_set_temperature(driver_temp, passenger_temp)
+
+    async def handle_set_sentry_mode(call: ServiceCall) -> None:
+        """Handle set sentry mode service call."""
+        device_id = call.data["device_id"]
+        enabled = call.data["enabled"]
+        coordinator = _get_coordinator(hass, device_id)
+        if coordinator:
+            await coordinator.async_set_sentry_mode(enabled)
+
+    async def handle_set_charge_limit(call: ServiceCall) -> None:
+        """Handle set charge limit service call."""
+        device_id = call.data["device_id"]
+        percent = call.data["percent"]
+        coordinator = _get_coordinator(hass, device_id)
+        if coordinator:
+            await coordinator.async_set_charge_limit(percent)
+
+    async def handle_set_charging_amps(call: ServiceCall) -> None:
+        """Handle set charging amps service call."""
+        device_id = call.data["device_id"]
+        amps = call.data["amps"]
+        coordinator = _get_coordinator(hass, device_id)
+        if coordinator:
+            await coordinator.async_set_charging_amps(amps)
+
+    async def handle_set_volume(call: ServiceCall) -> None:
+        """Handle set volume service call."""
+        device_id = call.data["device_id"]
+        volume = call.data["volume"]
+        coordinator = _get_coordinator(hass, device_id)
+        if coordinator:
+            await coordinator.async_set_volume(volume)
+
+    async def handle_set_steering_wheel_heater(call: ServiceCall) -> None:
+        """Handle set steering wheel heater service call."""
+        device_id = call.data["device_id"]
+        enabled = call.data["enabled"]
+        coordinator = _get_coordinator(hass, device_id)
+        if coordinator:
+            await coordinator.async_set_steering_wheel_heater(enabled)
+
     hass.services.async_register(
         DOMAIN, SERVICE_WAKE, handle_wake, schema=SERVICE_SCHEMA
     )
@@ -125,6 +223,24 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_CLOSE_CHARGE_PORT, handle_close_charge_port, schema=SERVICE_SCHEMA
     )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_TEMPERATURE, handle_set_temperature, schema=SERVICE_SET_TEMPERATURE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_SENTRY_MODE, handle_set_sentry_mode, schema=SERVICE_SET_SENTRY_MODE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_CHARGE_LIMIT, handle_set_charge_limit, schema=SERVICE_SET_CHARGE_LIMIT_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_CHARGING_AMPS, handle_set_charging_amps, schema=SERVICE_SET_CHARGING_AMPS_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_VOLUME, handle_set_volume, schema=SERVICE_SET_VOLUME_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_STEERING_WHEEL_HEATER, handle_set_steering_wheel_heater, schema=SERVICE_SET_STEERING_WHEEL_HEATER_SCHEMA
+    )
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:
@@ -136,3 +252,9 @@ async def async_unload_services(hass: HomeAssistant) -> None:
     hass.services.async_remove(DOMAIN, SERVICE_OPEN_FRUNK)
     hass.services.async_remove(DOMAIN, SERVICE_OPEN_CHARGE_PORT)
     hass.services.async_remove(DOMAIN, SERVICE_CLOSE_CHARGE_PORT)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_TEMPERATURE)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_SENTRY_MODE)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_CHARGE_LIMIT)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_CHARGING_AMPS)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_VOLUME)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_STEERING_WHEEL_HEATER)

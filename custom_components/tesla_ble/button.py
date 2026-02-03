@@ -32,6 +32,7 @@ BUTTONS: tuple[TeslaBLEButtonEntityDescription, ...] = (
         icon="mdi:car-electric",
         press_fn=lambda coordinator: coordinator.async_wake(),
     ),
+    # Trunk operations
     TeslaBLEButtonEntityDescription(
         key="open_trunk",
         name="Open Trunk",
@@ -39,11 +40,24 @@ BUTTONS: tuple[TeslaBLEButtonEntityDescription, ...] = (
         press_fn=lambda coordinator: coordinator.async_open_trunk(),
     ),
     TeslaBLEButtonEntityDescription(
+        key="close_trunk",
+        name="Close Trunk",
+        icon="mdi:car-back",
+        press_fn=lambda coordinator: coordinator.async_close_trunk(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="actuate_trunk",
+        name="Actuate Trunk",
+        icon="mdi:car-back",
+        press_fn=lambda coordinator: coordinator.async_actuate_trunk(),
+    ),
+    TeslaBLEButtonEntityDescription(
         key="open_frunk",
         name="Open Frunk",
         icon="mdi:car",
         press_fn=lambda coordinator: coordinator.async_open_frunk(),
     ),
+    # Charge port
     TeslaBLEButtonEntityDescription(
         key="open_charge_port",
         name="Open Charge Port",
@@ -55,6 +69,108 @@ BUTTONS: tuple[TeslaBLEButtonEntityDescription, ...] = (
         name="Close Charge Port",
         icon="mdi:ev-plug-type2",
         press_fn=lambda coordinator: coordinator.async_close_charge_port(),
+    ),
+    # Tonneau (Cybertruck)
+    TeslaBLEButtonEntityDescription(
+        key="open_tonneau",
+        name="Open Tonneau",
+        icon="mdi:truck-cargo-container",
+        press_fn=lambda coordinator: coordinator.async_open_tonneau(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="close_tonneau",
+        name="Close Tonneau",
+        icon="mdi:truck-cargo-container",
+        press_fn=lambda coordinator: coordinator.async_close_tonneau(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="stop_tonneau",
+        name="Stop Tonneau",
+        icon="mdi:truck-cargo-container",
+        press_fn=lambda coordinator: coordinator.async_stop_tonneau(),
+    ),
+    # Horn and lights
+    TeslaBLEButtonEntityDescription(
+        key="honk_horn",
+        name="Honk Horn",
+        icon="mdi:bullhorn",
+        press_fn=lambda coordinator: coordinator.async_honk_horn(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="flash_lights",
+        name="Flash Lights",
+        icon="mdi:car-light-high",
+        press_fn=lambda coordinator: coordinator.async_flash_lights(),
+    ),
+    # Windows
+    TeslaBLEButtonEntityDescription(
+        key="vent_windows",
+        name="Vent Windows",
+        icon="mdi:window-open-variant",
+        press_fn=lambda coordinator: coordinator.async_vent_windows(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="close_windows",
+        name="Close Windows",
+        icon="mdi:window-closed-variant",
+        press_fn=lambda coordinator: coordinator.async_close_windows(),
+    ),
+    # Climate control
+    TeslaBLEButtonEntityDescription(
+        key="climate_on",
+        name="Climate On",
+        icon="mdi:air-conditioner",
+        press_fn=lambda coordinator: coordinator.async_climate_on(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="climate_off",
+        name="Climate Off",
+        icon="mdi:air-conditioner",
+        press_fn=lambda coordinator: coordinator.async_climate_off(),
+    ),
+    # Charging
+    TeslaBLEButtonEntityDescription(
+        key="charge_start",
+        name="Start Charging",
+        icon="mdi:battery-charging",
+        press_fn=lambda coordinator: coordinator.async_charge_start(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="charge_stop",
+        name="Stop Charging",
+        icon="mdi:battery-charging",
+        press_fn=lambda coordinator: coordinator.async_charge_stop(),
+    ),
+    # Media controls
+    TeslaBLEButtonEntityDescription(
+        key="media_next_track",
+        name="Media Next Track",
+        icon="mdi:skip-next",
+        press_fn=lambda coordinator: coordinator.async_media_next_track(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="media_previous_track",
+        name="Media Previous Track",
+        icon="mdi:skip-previous",
+        press_fn=lambda coordinator: coordinator.async_media_previous_track(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="media_toggle_playback",
+        name="Media Toggle Playback",
+        icon="mdi:play-pause",
+        press_fn=lambda coordinator: coordinator.async_media_toggle_playback(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="media_volume_up",
+        name="Media Volume Up",
+        icon="mdi:volume-plus",
+        press_fn=lambda coordinator: coordinator.async_media_volume_up(),
+    ),
+    TeslaBLEButtonEntityDescription(
+        key="media_volume_down",
+        name="Media Volume Down",
+        icon="mdi:volume-minus",
+        press_fn=lambda coordinator: coordinator.async_media_volume_down(),
     ),
 )
 

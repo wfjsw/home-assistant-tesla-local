@@ -235,3 +235,233 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
             if not self.vehicle.has_session:
                 await self.vehicle.establish_session()
             return await self.vehicle.close_charge_port()
+
+    async def async_close_trunk(self) -> bool:
+        """Close the trunk."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.close_trunk()
+
+    async def async_actuate_trunk(self) -> bool:
+        """Actuate (toggle) the trunk."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.actuate_trunk()
+
+    async def async_open_tonneau(self) -> bool:
+        """Open the tonneau (Cybertruck)."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.open_tonneau()
+
+    async def async_close_tonneau(self) -> bool:
+        """Close the tonneau (Cybertruck)."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.close_tonneau()
+
+    async def async_stop_tonneau(self) -> bool:
+        """Stop the tonneau (Cybertruck)."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.stop_tonneau()
+
+    # Horn and lights
+
+    async def async_honk_horn(self) -> bool:
+        """Honk the horn."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.honk_horn()
+
+    async def async_flash_lights(self) -> bool:
+        """Flash the lights."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.flash_lights()
+
+    # Windows
+
+    async def async_vent_windows(self) -> bool:
+        """Vent all windows."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.vent_windows()
+
+    async def async_close_windows(self) -> bool:
+        """Close all windows."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.close_windows()
+
+    # Climate control
+
+    async def async_climate_on(self) -> bool:
+        """Turn on climate control."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.climate_on()
+
+    async def async_climate_off(self) -> bool:
+        """Turn off climate control."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.climate_off()
+
+    async def async_set_temperature(
+        self, driver_temp: float, passenger_temp: float | None = None
+    ) -> bool:
+        """Set cabin temperature."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.set_temperature(driver_temp, passenger_temp)
+
+    async def async_set_steering_wheel_heater(self, enabled: bool) -> bool:
+        """Turn steering wheel heater on or off."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.set_steering_wheel_heater(enabled)
+
+    # Charging
+
+    async def async_charge_start(self) -> bool:
+        """Start charging."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.charge_start()
+
+    async def async_charge_stop(self) -> bool:
+        """Stop charging."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.charge_stop()
+
+    async def async_set_charge_limit(self, percent: int) -> bool:
+        """Set charge limit percentage."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.set_charge_limit(percent)
+
+    async def async_set_charging_amps(self, amps: int) -> bool:
+        """Set charging current in amps."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.set_charging_amps(amps)
+
+    # Security
+
+    async def async_set_sentry_mode(self, enabled: bool) -> bool:
+        """Enable or disable sentry mode."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.set_sentry_mode(enabled)
+
+    # Media
+
+    async def async_media_next_track(self) -> bool:
+        """Skip to next media track."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.media_next_track()
+
+    async def async_media_previous_track(self) -> bool:
+        """Skip to previous media track."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.media_previous_track()
+
+    async def async_media_toggle_playback(self) -> bool:
+        """Toggle media playback."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.media_toggle_playback()
+
+    async def async_media_volume_up(self) -> bool:
+        """Increase media volume."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.media_volume_up()
+
+    async def async_media_volume_down(self) -> bool:
+        """Decrease media volume."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.media_volume_down()
+
+    async def async_set_volume(self, volume: float) -> bool:
+        """Set media volume."""
+        async with self._connection_lock:
+            if not self.vehicle.is_connected:
+                await self.vehicle.connect()
+            if not self.vehicle.has_session:
+                await self.vehicle.establish_session()
+            return await self.vehicle.set_volume(volume)
