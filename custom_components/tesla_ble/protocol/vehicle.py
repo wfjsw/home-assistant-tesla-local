@@ -551,6 +551,8 @@ class TeslaBLEVehicle:
             if not success:
                 _LOGGER.warning("Add key to whitelist failed: %s", error_msg)
             return success
+        
+        _LOGGER.warning(f"No response received when adding key to whitelist: {response}")
 
         return False
 
