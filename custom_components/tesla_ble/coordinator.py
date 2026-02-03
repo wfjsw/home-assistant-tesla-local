@@ -51,6 +51,13 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
         self._cancel_bluetooth_callback: callback | None = None
         self._connection_lock = asyncio.Lock()
 
+        # Diagnostic data
+        self.rssi: int | None = None
+        self.ble_address: str | None = None
+        self.last_seen: float | None = None
+        self.connection_count: int = 0
+        self.last_error: str | None = None
+
     def set_scan_interval(self, scan_interval: int) -> None:
         """Update the polling interval."""
         self.update_interval = timedelta(seconds=scan_interval)
@@ -79,6 +86,8 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
         change: bluetooth.BluetoothChange,
     ) -> None:
         """Handle Bluetooth advertisement events."""
+        import time
+
         _LOGGER.debug(
             "Bluetooth event: %s, %s, RSSI: %s",
             service_info.address,
@@ -86,6 +95,14 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
             service_info.rssi,
         )
         self.set_ble_device(service_info.device)
+
+        # Update diagnostic data
+        self.rssi = service_info.rssi
+        self.ble_address = service_info.address
+        self.last_seen = time.time()
+
+        # Notify listeners of the update (for RSSI sensor)
+        self.async_set_updated_data(self.data) if self.data else None
 
     async def async_start(self) -> None:
         """Start the coordinator and register for Bluetooth updates."""
@@ -124,6 +141,9 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
                     if not await self.vehicle.connect():
                         raise UpdateFailed("Failed to connect to vehicle")
 
+                    # Track successful connections
+                    self.connection_count += 1
+
                 # Establish session if needed
                 if not self.vehicle.has_session:
                     if not await self.vehicle.establish_session():
@@ -131,10 +151,12 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
 
                 # Get vehicle status
                 state = await self.vehicle.get_vehicle_status()
+                self.last_error = None  # Clear error on success
                 return state
 
             except Exception as ex:
                 _LOGGER.error("Error updating vehicle data: %s", ex)
+                self.last_error = str(ex)
                 # Disconnect on error to force reconnection
                 await self.vehicle.disconnect()
                 raise UpdateFailed(f"Error communicating with vehicle: {ex}") from ex

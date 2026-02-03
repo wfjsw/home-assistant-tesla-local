@@ -46,6 +46,17 @@ async def async_get_config_entry_diagnostics(
     return {
         "config_entry": async_redact_data(entry.as_dict(), TO_REDACT),
         "vehicle_state": state_dict,
-        "is_connected": coordinator.vehicle.is_connected,
-        "has_session": coordinator.vehicle.has_session,
+        "connection": {
+            "is_connected": coordinator.vehicle.is_connected,
+            "has_session": coordinator.vehicle.has_session,
+            "connection_count": coordinator.connection_count,
+        },
+        "bluetooth": {
+            "rssi": coordinator.rssi,
+            "ble_address": coordinator.ble_address,
+            "last_seen": coordinator.last_seen,
+        },
+        "errors": {
+            "last_error": coordinator.last_error,
+        },
     }
