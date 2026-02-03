@@ -283,8 +283,8 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._public_key = get_public_key_bytes(private_key)
 
                 return await self.async_step_pair_key()
-            except Exception as ex:
-                _LOGGER.error("Failed to import key: %s", ex)
+            except Exception:
+                _LOGGER.exception("Failed to import key")
                 errors["base"] = "invalid_key"
 
         return self.async_show_form(
@@ -338,8 +338,8 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     else:
                         errors["base"] = "cannot_connect"
 
-                except Exception as ex:
-                    _LOGGER.error("Failed to pair key: %s", ex)
+                except Exception:
+                    _LOGGER.exception("Failed to pair key")
                     errors["base"] = "pairing_failed"
 
         return self.async_show_form(
@@ -406,8 +406,8 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             except asyncio.TimeoutError:
                 errors["base"] = "timeout"
-            except Exception as ex:
-                _LOGGER.error("Failed to add key: %s", ex)
+            except Exception:
+                _LOGGER.exception("Failed to add key")
                 errors["base"] = "pairing_failed"
 
         return self.async_show_form(
@@ -470,8 +470,8 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     else:
                         errors["base"] = "cannot_connect"
 
-                except Exception as ex:
-                    _LOGGER.error("Failed to verify key: %s", ex)
+                except Exception:
+                    _LOGGER.exception("Failed to verify key")
                     errors["base"] = "verification_failed"
 
         return self.async_show_form(
