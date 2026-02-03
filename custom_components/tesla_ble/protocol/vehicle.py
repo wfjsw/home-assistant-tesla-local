@@ -214,13 +214,21 @@ class TeslaBLEVehicle:
             _LOGGER.warning("Failed to dispatch message: %s", ex)
 
     async def connect(self) -> bool:
-        """Connect to the vehicle."""
+        """Connect to the vehicle.
+        
+        Uses Home Assistant's recommended bleak_retry_connector for robust
+        connection handling with automatic retries and proper error handling.
+        """
         async with self._lock:
             if self.is_connected:
+                _LOGGER.debug("Already connected to %s", self._ble_device.address)
                 return True
 
             try:
                 _LOGGER.info("Connecting to vehicle: %s", self._ble_device.address)
+                
+                # Use establish_connection for robust connection with retries
+                # This follows Home Assistant Bluetooth best practices
                 self._client = await establish_connection(
                     BleakClient,
                     self._ble_device,
@@ -234,41 +242,85 @@ class TeslaBLEVehicle:
                 )
 
                 self._state.connected = True
-                _LOGGER.info("Connected to vehicle")
+                _LOGGER.info(
+                    "Connected to vehicle %s (MTU: %s)",
+                    self._ble_device.address,
+                    getattr(self._client, "mtu_size", "unknown"),
+                )
                 return True
 
-            except BleakError as ex:
-                _LOGGER.error("Failed to connect: %s", ex)
+            except (BleakError, asyncio.TimeoutError) as ex:
+                _LOGGER.error(
+                    "Failed to connect to %s: %s",
+                    self._ble_device.address,
+                    ex,
+                )
+                self._client = None
+                return False
+            except Exception as ex:
+                _LOGGER.exception(
+                    "Unexpected error connecting to %s",
+                    self._ble_device.address,
+                )
                 self._client = None
                 return False
 
     async def disconnect(self) -> None:
-        """Disconnect from the vehicle."""
+        """Disconnect from the vehicle.
+        
+        Properly cleans up Bluetooth connection and notification subscriptions.
+        """
         async with self._lock:
-            if self._client and self._client.is_connected:
+            if not self._client:
+                return
+                
+            if self._client.is_connected:
                 try:
+                    _LOGGER.debug("Stopping notifications and disconnecting from %s", self._ble_device.address)
                     await self._client.stop_notify(TESLA_RX_CHAR_UUID)
                     await self._client.disconnect()
-                except BleakError as ex:
+                except (BleakError, asyncio.TimeoutError) as ex:
                     _LOGGER.debug("Error during disconnect: %s", ex)
+                except Exception as ex:
+                    _LOGGER.warning("Unexpected error during disconnect: %s", ex)
                 finally:
                     self._client = None
                     self._state.connected = False
+            else:
+                _LOGGER.debug("Client not connected, cleaning up")
+                self._client = None
+                self._state.connected = False
 
     async def _send_message(self, message: bytes) -> None:
-        """Send a message to the vehicle."""
+        """Send a message to the vehicle.
+        
+        Handles message framing and chunking according to BLE MTU size.
+        Follows Home Assistant best practices for BLE write operations.
+        """
         if not self._client or not self._client.is_connected:
             raise ConnectionError("Not connected to vehicle")
 
-        # Frame the message with length prefix
+        # Frame the message with 2-byte big-endian length prefix
         framed = struct.pack(">H", len(message)) + message
-        _LOGGER.debug("Sending message: %s", framed.hex())
+        _LOGGER.debug("Sending %d byte message (framed: %d bytes)", len(message), len(framed))
 
-        # Send in chunks if necessary (MTU is typically 512 for BLE)
-        mtu = 512
-        for i in range(0, len(framed), mtu):
-            chunk = framed[i : i + mtu]
-            await self._client.write_gatt_char(TESLA_TX_CHAR_UUID, chunk)
+        # Get MTU size from client (typically 512 for BLE, but can vary)
+        # Use safe default if not available
+        mtu = getattr(self._client, "mtu_size", 512)
+        if mtu > 512:
+            mtu = 512  # Conservative limit for compatibility
+        
+        # Send in chunks if message exceeds MTU
+        if len(framed) <= mtu:
+            # Single write
+            await self._client.write_gatt_char(TESLA_TX_CHAR_UUID, framed, response=False)
+        else:
+            # Chunked writes
+            _LOGGER.debug("Message requires chunking (MTU: %d)", mtu)
+            for i in range(0, len(framed), mtu):
+                chunk = framed[i : i + mtu]
+                _LOGGER.debug("Sending chunk %d-%d of %d", i, i + len(chunk), len(framed))
+                await self._client.write_gatt_char(TESLA_TX_CHAR_UUID, chunk, response=False)
 
     async def _send_and_receive(
         self,

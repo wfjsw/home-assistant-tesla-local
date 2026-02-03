@@ -86,7 +86,13 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
         service_info: BluetoothServiceInfoBleak,
         change: bluetooth.BluetoothChange,
     ) -> None:
-        """Handle Bluetooth advertisement events."""
+        """Handle Bluetooth advertisement events.
+        
+        This is called whenever the device advertises, allowing us to:
+        - Track RSSI signal strength
+        - Update device availability
+        - Refresh the BLE device object
+        """
         # Only process events for our device
         if self._ble_device and service_info.address != self._ble_device.address:
             return
@@ -94,11 +100,14 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
         import time
 
         _LOGGER.debug(
-            "Bluetooth event: %s, %s, RSSI: %s",
+            "Bluetooth event for %s: change=%s, RSSI=%s, connectable=%s",
             service_info.address,
-            change,
+            change.name,
             service_info.rssi,
+            service_info.connectable,
         )
+        
+        # Update device reference (important for maintaining connection)
         self.set_ble_device(service_info.device)
 
         # Update diagnostic data
@@ -111,8 +120,15 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
             self.async_set_updated_data(self.data)
 
     async def async_start(self) -> None:
-        """Start the coordinator and register for Bluetooth updates."""
-        # Register callbacks for both known Tesla service UUIDs
+        """Start the coordinator and register for Bluetooth updates.
+        
+        Follows Home Assistant Bluetooth best practices:
+        - Register callbacks for device advertisements
+        - Use both service UUID and address matchers for reliability
+        - Enable active scanning for better responsiveness
+        """
+        # Register callback for service UUID (primary method)
+        # This catches our device when it advertises its Tesla service UUID
         for service_uuid in [TESLA_SERVICE_UUID, TESLA_ALT_SERVICE_UUID]:
             cancel = bluetooth.async_register_callback(
                 self.hass,
@@ -121,49 +137,118 @@ class TeslaBLECoordinator(DataUpdateCoordinator[VehicleState]):
                 bluetooth.BluetoothScanningMode.ACTIVE,
             )
             self._cancel_bluetooth_callbacks.append(cancel)
+            _LOGGER.debug("Registered Bluetooth callback for service UUID: %s", service_uuid)
 
-        # Try to find device via Bluetooth
-        service_info = bluetooth.async_last_service_info(
-            self.hass, self._ble_device.address if self._ble_device else "", True
-        )
-        if service_info:
-            self.set_ble_device(service_info.device)
+        # Also register callback for device address (backup method)
+        # This ensures we catch the device even if service UUIDs aren't advertised
+        if self._ble_device:
+            cancel = bluetooth.async_register_callback(
+                self.hass,
+                self._async_handle_bluetooth_event,
+                BluetoothCallbackMatcher(address=self._ble_device.address),
+                bluetooth.BluetoothScanningMode.ACTIVE,
+            )
+            self._cancel_bluetooth_callbacks.append(cancel)
+            _LOGGER.debug("Registered Bluetooth callback for address: %s", self._ble_device.address)
+
+        # Get the latest service info to ensure we have current device state
+        if self._ble_device:
+            service_info = bluetooth.async_last_service_info(
+                self.hass, self._ble_device.address, connectable=True
+            )
+            if service_info:
+                _LOGGER.debug(
+                    "Initial service info: RSSI=%s, connectable=%s",
+                    service_info.rssi,
+                    service_info.connectable,
+                )
+                self.set_ble_device(service_info.device)
+            else:
+                _LOGGER.warning(
+                    "No initial service info available for %s. "
+                    "Will wait for advertisements.",
+                    self._ble_device.address,
+                )
 
     async def async_stop(self) -> None:
         """Stop the coordinator and unregister callbacks."""
+        _LOGGER.debug("Stopping coordinator and cleaning up Bluetooth callbacks")
+        
+        # Unregister all Bluetooth callbacks
         for cancel in self._cancel_bluetooth_callbacks:
             cancel()
         self._cancel_bluetooth_callbacks.clear()
 
+        # Disconnect from vehicle
         await self.vehicle.disconnect()
 
     async def _async_update_data(self) -> VehicleState:
-        """Fetch data from the vehicle."""
+        """Fetch data from the vehicle.
+        
+        Follows Home Assistant best practices:
+        - Uses connection lock to prevent concurrent access
+        - Handles connection failures gracefully
+        - Provides informative error messages
+        - Disconnects on error to force clean reconnection
+        """
         async with self._connection_lock:
             try:
+                # Ensure we have a valid BLE device
+                if not self._ble_device:
+                    raise UpdateFailed("No BLE device available")
+
                 # Try to connect if not connected
                 if not self.vehicle.is_connected:
-                    if not self._ble_device:
-                        raise UpdateFailed("No BLE device available")
-
+                    _LOGGER.debug("Vehicle not connected, attempting connection")
                     if not await self.vehicle.connect():
-                        raise UpdateFailed("Failed to connect to vehicle")
+                        raise UpdateFailed(
+                            f"Failed to connect to vehicle at {self._ble_device.address}. "
+                            "Check that the vehicle is nearby and Bluetooth is enabled."
+                        )
 
                     # Track successful connections
                     self.connection_count += 1
+                    _LOGGER.info(
+                        "Connected to vehicle (connection #%d)",
+                        self.connection_count,
+                    )
 
                 # Establish session if needed
                 if not self.vehicle.has_session:
+                    _LOGGER.debug("No active session, establishing new session")
                     if not await self.vehicle.establish_session():
-                        raise UpdateFailed("Failed to establish session")
+                        raise UpdateFailed(
+                            "Failed to establish secure session with vehicle. "
+                            "Ensure your key is paired with the vehicle."
+                        )
 
                 # Get vehicle status
                 state = await self.vehicle.get_vehicle_status()
                 self.last_error = None  # Clear error on success
+                _LOGGER.debug(
+                    "Status update: lock=%s, sleep=%s",
+                    state.lock_state.name,
+                    state.sleep_status.name,
+                )
                 return state
 
+            except UpdateFailed:
+                # Re-raise UpdateFailed as-is
+                raise
+            except ConnectionError as ex:
+                _LOGGER.warning("Connection error: %s", ex)
+                self.last_error = str(ex)
+                # Disconnect on connection error to force clean reconnection
+                await self.vehicle.disconnect()
+                raise UpdateFailed(f"Connection error: {ex}") from ex
+            except asyncio.TimeoutError as ex:
+                _LOGGER.warning("Timeout communicating with vehicle")
+                self.last_error = "Timeout"
+                # Disconnect on timeout to force clean reconnection
+                await self.vehicle.disconnect()
+                raise UpdateFailed("Timeout communicating with vehicle") from ex
             except Exception as ex:
-                _LOGGER.error("Error updating vehicle data: %s", ex)
+                _LOGGER.error("Unexpected error updating vehicle data: %s", ex, exc_info=True)
                 self.last_error = str(ex)
                 # Disconnect on error to force reconnection
                 await self.vehicle.disconnect()

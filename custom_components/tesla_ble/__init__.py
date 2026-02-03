@@ -51,35 +51,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.info("Setting up Tesla BLE for VIN: %s", vin[-6:])
 
-    # Find the BLE device
-    ble_device = bluetooth.async_ble_device_from_address(
+    # Find the BLE device using Home Assistant Bluetooth API
+    # First try to get the last known service info for this address
+    service_info = bluetooth.async_last_service_info(
         hass, address, connectable=True
     )
 
-    if not ble_device:
-        # Try to find by address, service UUID, or name pattern
-        service_infos = bluetooth.async_discovered_service_info(hass, True)
-        for service_info in service_infos:
-            # Match by address
-            if service_info.address == address:
-                ble_device = service_info.device
-                break
-
-            # Match by service UUID
-            service_uuids_lower = {str(uuid).lower() for uuid in service_info.service_uuids}
-            if service_uuids_lower & TESLA_SERVICE_UUIDS:
-                ble_device = service_info.device
-                break
-
-            # Match by Tesla name pattern
-            if is_tesla_device_name(service_info.name):
-                ble_device = service_info.device
-                break
+    if service_info:
+        _LOGGER.debug(
+            "Found device from service info: %s (RSSI: %s)",
+            service_info.name,
+            service_info.rssi,
+        )
+        ble_device = service_info.device
+    else:
+        # Fallback: try to get device from address
+        _LOGGER.debug("No service info found, trying async_ble_device_from_address")
+        ble_device = bluetooth.async_ble_device_from_address(
+            hass, address, connectable=True
+        )
 
     if not ble_device:
         raise ConfigEntryNotReady(
-            f"Could not find Tesla BLE device with address {address}"
+            f"Could not find Tesla BLE device with address {address}. "
+            "Ensure the vehicle is nearby and Bluetooth is enabled."
         )
+
+    _LOGGER.info(
+        "Found Tesla device: %s at %s",
+        ble_device.name or "Unknown",
+        ble_device.address,
+    )
 
     # Create the vehicle instance
     vehicle = TeslaBLEVehicle(ble_device, private_key, vin)
