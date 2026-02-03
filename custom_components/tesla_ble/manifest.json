@@ -17,11 +17,7 @@
       "service_uuid": "00000211-b2d1-43f0-9b88-960cebf8b91e"
     },
     {
-      "service_uuid": "00001122-0000-1000-8000-00805f9b34fb",
-      "local_name": "S*C"
-    },
-    {
-      "local_name": "S*C"
+      "service_uuid": "00001122-0000-1000-8000-00805f9b34fb"
     }
   ],
   "version": "1.0.0"
