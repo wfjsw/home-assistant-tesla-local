@@ -527,9 +527,7 @@ class TeslaBLEVehicle:
 
         whitelist_op = WhitelistOperation(
             public_key_to_add=self._crypto.public_key_bytes,
-            metadata_for_key=KeyMetadata(
-                key_form_factor=KeyFormFactor.CLOUD_KEY,
-            ),
+            metadata_for_key=KeyMetadata(),
         )
 
         vcsec = VCSECMessage(whitelist_operation=whitelist_op)

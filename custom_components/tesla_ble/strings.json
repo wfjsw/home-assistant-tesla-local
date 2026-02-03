@@ -45,7 +45,7 @@
       },
       "tap_key_card": {
         "title": "Tap Key Card",
-        "description": "To authorize the new key **\"{key_name}\"**, please:\n\n1. Sit inside your vehicle\n2. Place your Tesla key card on the center console\n3. Wait for confirmation (up to 30 seconds)\n\nPress **Submit** after tapping your key card."
+        "description": "To authorize the new key, please:\n\n1. Sit inside your vehicle\n2. Place your Tesla key card on the center console\n3. Wait for confirmation (up to 30 seconds)\n\nPress **Submit** after tapping your key card."
       },
       "already_paired": {
         "title": "Verify Existing Key",
