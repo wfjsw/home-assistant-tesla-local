@@ -10,7 +10,8 @@
   "requirements": [
     "bleak>=0.21.0",
     "bleak-retry-connector>=3.1.0",
-    "cryptography>=41.0.0"
+    "cryptography>=41.0.0",
+    "protobuf>=4.21.0"
   ],
   "bluetooth": [
     {

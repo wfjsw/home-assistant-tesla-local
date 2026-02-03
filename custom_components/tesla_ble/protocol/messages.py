@@ -1,107 +1,31 @@
-"""Protocol buffer message definitions for Tesla BLE.
+"""Protocol buffer message wrappers for Tesla BLE.
 
-This module implements a simplified protobuf-compatible message format
-without requiring protobuf compilation, using manual wire format encoding.
+This module provides a clean API using the generated protobuf classes.
 """
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass, field
-from enum import IntEnum
-from typing import Any
 
 from ..const import (
     ClosureMoveType,
     Domain,
-    HVACAction,
+    GenericError,
     InformationRequestType,
     KeyFormFactor,
     OperationStatus,
     RKEAction,
-    SignatureType,
-    WhitelistOperationType,
+)
+
+# Import generated protobuf classes
+from .protos_py import (
+    errors_pb2,
+    signatures_pb2,
+    universal_message_pb2,
+    vcsec_pb2,
 )
 
 
-# Protobuf wire types
-WIRE_VARINT = 0
-WIRE_FIXED64 = 1
-WIRE_LENGTH_DELIMITED = 2
-WIRE_FIXED32 = 5
-
-
-def encode_varint(value: int) -> bytes:
-    """Encode an integer as a protobuf varint."""
-    result = []
-    while value > 127:
-        result.append((value & 0x7F) | 0x80)
-        value >>= 7
-    result.append(value)
-    return bytes(result)
-
-
-def decode_varint(data: bytes, offset: int = 0) -> tuple[int, int]:
-    """Decode a protobuf varint, returning (value, bytes_consumed)."""
-    result = 0
-    shift = 0
-    pos = offset
-    while True:
-        byte = data[pos]
-        result |= (byte & 0x7F) << shift
-        pos += 1
-        if not (byte & 0x80):
-            break
-        shift += 7
-    return result, pos - offset
-
-
-def encode_field(field_number: int, wire_type: int, value: bytes | int) -> bytes:
-    """Encode a protobuf field."""
-    tag = (field_number << 3) | wire_type
-    if wire_type == WIRE_VARINT:
-        return encode_varint(tag) + encode_varint(value)
-    elif wire_type == WIRE_LENGTH_DELIMITED:
-        return encode_varint(tag) + encode_varint(len(value)) + value
-    elif wire_type == WIRE_FIXED32:
-        return encode_varint(tag) + struct.pack("<I", value)
-    elif wire_type == WIRE_FIXED64:
-        return encode_varint(tag) + struct.pack("<Q", value)
-    raise ValueError(f"Unknown wire type: {wire_type}")
-
-
-def parse_fields(data: bytes) -> dict[int, list[tuple[int, Any]]]:
-    """Parse protobuf fields into {field_number: [(wire_type, value), ...]}."""
-    fields: dict[int, list[tuple[int, Any]]] = {}
-    offset = 0
-
-    while offset < len(data):
-        tag, consumed = decode_varint(data, offset)
-        offset += consumed
-        field_number = tag >> 3
-        wire_type = tag & 0x07
-
-        if wire_type == WIRE_VARINT:
-            value, consumed = decode_varint(data, offset)
-            offset += consumed
-        elif wire_type == WIRE_LENGTH_DELIMITED:
-            length, consumed = decode_varint(data, offset)
-            offset += consumed
-            value = data[offset : offset + length]
-            offset += length
-        elif wire_type == WIRE_FIXED32:
-            value = struct.unpack("<I", data[offset : offset + 4])[0]
-            offset += 4
-        elif wire_type == WIRE_FIXED64:
-            value = struct.unpack("<Q", data[offset : offset + 8])[0]
-            offset += 8
-        else:
-            raise ValueError(f"Unknown wire type: {wire_type}")
-
-        if field_number not in fields:
-            fields[field_number] = []
-        fields[field_number].append((wire_type, value))
-
-    return fields
+# Universal Message wrappers
 
 
 @dataclass
@@ -111,25 +35,26 @@ class Destination:
     domain: Domain | None = None
     routing_address: bytes | None = None
 
-    def encode(self) -> bytes:
-        """Encode destination to protobuf bytes."""
-        result = b""
+    def to_proto(self) -> universal_message_pb2.Destination:
+        """Convert to protobuf message."""
+        dest = universal_message_pb2.Destination()
         if self.domain is not None:
-            result += encode_field(1, WIRE_VARINT, self.domain)
+            dest.domain = self.domain
         if self.routing_address is not None:
-            result += encode_field(2, WIRE_LENGTH_DELIMITED, self.routing_address)
-        return result
+            dest.routing_address = self.routing_address
+        return dest
 
     @classmethod
-    def decode(cls, data: bytes) -> "Destination":
-        """Decode destination from protobuf bytes."""
-        fields = parse_fields(data)
+    def from_proto(cls, proto: universal_message_pb2.Destination) -> Destination:
+        """Create from protobuf message."""
         domain = None
         routing_address = None
-        if 1 in fields:
-            domain = Domain(fields[1][0][1])
-        if 2 in fields:
-            routing_address = fields[2][0][1]
+        
+        if proto.HasField("domain"):
+            domain = Domain(proto.domain)
+        if proto.HasField("routing_address"):
+            routing_address = proto.routing_address
+            
         return cls(domain=domain, routing_address=routing_address)
 
 
@@ -137,68 +62,37 @@ class Destination:
 class SignatureData:
     """AES-GCM signature data."""
 
-    signature_type: SignatureType = SignatureType.AES_GCM_PERSONALIZED
     epoch: bytes = field(default_factory=bytes)
     nonce: bytes = field(default_factory=bytes)
     counter: int = 0
     expires_at: int = 0
     tag: bytes = field(default_factory=bytes)
 
-    def encode(self) -> bytes:
-        """Encode signature data to protobuf bytes."""
-        # AES_GCM_PERSONALIZED_DATA field structure
-        inner = b""
-        if self.epoch:
-            inner += encode_field(1, WIRE_LENGTH_DELIMITED, self.epoch)
-        if self.nonce:
-            inner += encode_field(2, WIRE_LENGTH_DELIMITED, self.nonce)
-        inner += encode_field(3, WIRE_VARINT, self.counter)
-        inner += encode_field(4, WIRE_VARINT, self.expires_at)
-        if self.tag:
-            inner += encode_field(5, WIRE_LENGTH_DELIMITED, self.tag)
-
-        result = encode_field(1, WIRE_VARINT, self.signature_type)
-        result += encode_field(6, WIRE_LENGTH_DELIMITED, inner)  # AES_GCM_PERSONALIZED
-        return result
+    def to_proto(self) -> signatures_pb2.SignatureData:
+        """Convert to protobuf message."""
+        sig_data = signatures_pb2.SignatureData()
+        aes_gcm_data = signatures_pb2.AES_GCM_Personalized_Signature_Data()
+        aes_gcm_data.epoch = self.epoch
+        aes_gcm_data.nonce = self.nonce
+        aes_gcm_data.counter = self.counter
+        aes_gcm_data.expires_at = self.expires_at
+        aes_gcm_data.tag = self.tag
+        sig_data.AES_GCM_Personalized_data.CopyFrom(aes_gcm_data)
+        return sig_data
 
     @classmethod
-    def decode(cls, data: bytes) -> "SignatureData":
-        """Decode signature data from protobuf bytes."""
-        fields = parse_fields(data)
-        sig_type = SignatureType.AES_GCM_PERSONALIZED
-        epoch = b""
-        nonce = b""
-        counter = 0
-        expires_at = 0
-        tag = b""
-
-        if 1 in fields:
-            sig_type = SignatureType(fields[1][0][1])
-
-        # Parse inner data based on signature type
-        inner_field = 6 if sig_type == SignatureType.AES_GCM_PERSONALIZED else 5
-        if inner_field in fields:
-            inner_data = fields[inner_field][0][1]
-            inner_fields = parse_fields(inner_data)
-            if 1 in inner_fields:
-                epoch = inner_fields[1][0][1]
-            if 2 in inner_fields:
-                nonce = inner_fields[2][0][1]
-            if 3 in inner_fields:
-                counter = inner_fields[3][0][1]
-            if 4 in inner_fields:
-                expires_at = inner_fields[4][0][1]
-            if 5 in inner_fields:
-                tag = inner_fields[5][0][1]
-
-        return cls(
-            signature_type=sig_type,
-            epoch=epoch,
-            nonce=nonce,
-            counter=counter,
-            expires_at=expires_at,
-            tag=tag,
-        )
+    def from_proto(cls, proto: signatures_pb2.SignatureData) -> SignatureData:
+        """Create from protobuf message."""
+        if proto.HasField("AES_GCM_Personalized_data"):
+            aes_gcm_data = proto.AES_GCM_Personalized_data
+            return cls(
+                epoch=aes_gcm_data.epoch,
+                nonce=aes_gcm_data.nonce,
+                counter=aes_gcm_data.counter,
+                expires_at=aes_gcm_data.expires_at,
+                tag=aes_gcm_data.tag,
+            )
+        return cls()
 
 
 @dataclass
@@ -208,22 +102,20 @@ class SessionInfoRequest:
     public_key: bytes = field(default_factory=bytes)
     challenge: bytes = field(default_factory=bytes)
 
-    def encode(self) -> bytes:
-        """Encode to protobuf bytes."""
-        result = b""
-        if self.public_key:
-            result += encode_field(1, WIRE_LENGTH_DELIMITED, self.public_key)
-        if self.challenge:
-            result += encode_field(2, WIRE_LENGTH_DELIMITED, self.challenge)
-        return result
+    def to_proto(self) -> universal_message_pb2.SessionInfoRequest:
+        """Convert to protobuf message."""
+        req = universal_message_pb2.SessionInfoRequest()
+        req.public_key = self.public_key
+        req.challenge = self.challenge
+        return req
 
     @classmethod
-    def decode(cls, data: bytes) -> "SessionInfoRequest":
-        """Decode from protobuf bytes."""
-        fields = parse_fields(data)
-        public_key = fields.get(1, [(0, b"")])[0][1]
-        challenge = fields.get(2, [(0, b"")])[0][1]
-        return cls(public_key=public_key, challenge=challenge)
+    def from_proto(cls, proto: universal_message_pb2.SessionInfoRequest) -> SessionInfoRequest:
+        """Create from protobuf message."""
+        return cls(
+            public_key=proto.public_key,
+            challenge=proto.challenge,
+        )
 
 
 @dataclass
@@ -234,30 +126,17 @@ class SessionInfo:
     epoch: bytes = field(default_factory=bytes)
     time_zero: int = 0
     counter: int = 0
-    status: OperationStatus = OperationStatus.OK
-
-    def encode(self) -> bytes:
-        """Encode to protobuf bytes."""
-        result = b""
-        if self.public_key:
-            result += encode_field(1, WIRE_LENGTH_DELIMITED, self.public_key)
-        if self.epoch:
-            result += encode_field(2, WIRE_LENGTH_DELIMITED, self.epoch)
-        result += encode_field(3, WIRE_VARINT, self.time_zero)
-        result += encode_field(4, WIRE_VARINT, self.counter)
-        result += encode_field(5, WIRE_VARINT, self.status)
-        return result
+    status: int = 0
 
     @classmethod
-    def decode(cls, data: bytes) -> "SessionInfo":
-        """Decode from protobuf bytes."""
-        fields = parse_fields(data)
+    def from_proto(cls, proto: signatures_pb2.SessionInfo) -> SessionInfo:
+        """Create from protobuf message."""
         return cls(
-            public_key=fields.get(1, [(0, b"")])[0][1],
-            epoch=fields.get(2, [(0, b"")])[0][1],
-            time_zero=fields.get(3, [(0, 0)])[0][1],
-            counter=fields.get(4, [(0, 0)])[0][1],
-            status=OperationStatus(fields.get(5, [(0, 0)])[0][1]),
+            public_key=proto.publicKey,
+            epoch=proto.epoch,
+            time_zero=proto.clock_time,
+            counter=proto.counter,
+            status=proto.status,
         )
 
 
@@ -269,12 +148,11 @@ class MessageStatus:
     message_fault: int = 0
 
     @classmethod
-    def decode(cls, data: bytes) -> "MessageStatus":
-        """Decode from protobuf bytes."""
-        fields = parse_fields(data)
+    def from_proto(cls, proto: universal_message_pb2.MessageStatus) -> MessageStatus:
+        """Create from protobuf message."""
         return cls(
-            operation_status=OperationStatus(fields.get(1, [(0, 0)])[0][1]),
-            message_fault=fields.get(2, [(0, 0)])[0][1],
+            operation_status=OperationStatus(proto.operation_status),
+            message_fault=proto.signed_message_fault,
         )
 
 
@@ -294,86 +172,64 @@ class RoutableMessage:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        result = b""
-
-        # Field 1: to_destination
-        to_bytes = self.to_destination.encode()
-        if to_bytes:
-            result += encode_field(1, WIRE_LENGTH_DELIMITED, to_bytes)
-
-        # Field 2: from_destination
-        from_bytes = self.from_destination.encode()
-        if from_bytes:
-            result += encode_field(2, WIRE_LENGTH_DELIMITED, from_bytes)
-
-        # Field 3: payload (protobuf_message_as_bytes)
+        msg = universal_message_pb2.RoutableMessage()
+        
+        msg.to_destination.CopyFrom(self.to_destination.to_proto())
+        msg.from_destination.CopyFrom(self.from_destination.to_proto())
+        
         if self.payload:
-            result += encode_field(3, WIRE_LENGTH_DELIMITED, self.payload)
-
-        # Field 4: session_info_request
+            msg.protobuf_message_as_bytes = self.payload
+            
         if self.session_info_request:
-            result += encode_field(
-                4, WIRE_LENGTH_DELIMITED, self.session_info_request.encode()
-            )
-
-        # Field 5: session_info
+            msg.session_info_request.CopyFrom(self.session_info_request.to_proto())
+            
         if self.session_info:
-            result += encode_field(
-                5, WIRE_LENGTH_DELIMITED, self.session_info.encode()
-            )
-
-        # Field 6: signature_data
+            # SessionInfo comes as bytes from vehicle
+            msg.session_info = self.session_info
+            
         if self.signature_data:
-            result += encode_field(
-                6, WIRE_LENGTH_DELIMITED, self.signature_data.encode()
-            )
-
-        # Field 7: message_status
-        # (read-only, not encoded)
-
-        # Field 50: request_uuid
+            msg.signature_data.CopyFrom(self.signature_data.to_proto())
+            
         if self.request_uuid:
-            result += encode_field(50, WIRE_LENGTH_DELIMITED, self.request_uuid)
-
-        # Field 51: flags
+            msg.request_uuid = self.request_uuid
+            
         if self.flags:
-            result += encode_field(51, WIRE_VARINT, self.flags)
-
-        return result
+            msg.flags = self.flags
+            
+        return msg.SerializeToString()
 
     @classmethod
-    def decode(cls, data: bytes) -> "RoutableMessage":
+    def decode(cls, data: bytes) -> RoutableMessage:
         """Decode from protobuf bytes."""
-        fields = parse_fields(data)
-
-        to_dest = Destination()
-        from_dest = Destination()
-        if 1 in fields:
-            to_dest = Destination.decode(fields[1][0][1])
-        if 2 in fields:
-            from_dest = Destination.decode(fields[2][0][1])
-
-        payload = fields.get(3, [(0, b"")])[0][1]
-
+        msg = universal_message_pb2.RoutableMessage()
+        msg.ParseFromString(data)
+        
+        to_dest = Destination.from_proto(msg.to_destination)
+        from_dest = Destination.from_proto(msg.from_destination)
+        
+        payload = None
+        if msg.HasField("protobuf_message_as_bytes"):
+            payload = msg.protobuf_message_as_bytes
+            
         session_info_request = None
-        if 4 in fields:
-            session_info_request = SessionInfoRequest.decode(fields[4][0][1])
-
+        if msg.HasField("session_info_request"):
+            session_info_request = SessionInfoRequest.from_proto(msg.session_info_request)
+            
         session_info = None
-        if 5 in fields:
-            session_info = SessionInfo.decode(fields[5][0][1])
-
+        if msg.HasField("session_info"):
+            # Parse session info from bytes
+            session_info_proto = signatures_pb2.SessionInfo()
+            session_info_proto.ParseFromString(msg.session_info)
+            session_info = SessionInfo.from_proto(session_info_proto)
+            
         signature_data = None
-        if 6 in fields:
-            signature_data = SignatureData.decode(fields[6][0][1])
-
+        if msg.HasField("signature_data"):
+            signature_data = SignatureData.from_proto(msg.signature_data)
+            
         message_status = None
-        if 7 in fields:
-            message_status = MessageStatus.decode(fields[7][0][1])
-
-        request_uuid = fields.get(50, [(0, b"")])[0][1]
-        flags = fields.get(51, [(0, 0)])[0][1]
-
+        if msg.HasField("signedMessageStatus"):
+            message_status = MessageStatus.from_proto(msg.signedMessageStatus)
+            
         return cls(
             to_destination=to_dest,
             from_destination=from_dest,
@@ -382,8 +238,8 @@ class RoutableMessage:
             session_info=session_info,
             signature_data=signature_data,
             message_status=message_status,
-            request_uuid=request_uuid,
-            flags=flags,
+            request_uuid=msg.request_uuid,
+            flags=msg.flags,
         )
 
 
@@ -395,13 +251,10 @@ class UnsignedMessage:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        return encode_field(1, WIRE_LENGTH_DELIMITED, self.sub_message)
-
-    @classmethod
-    def decode(cls, data: bytes) -> "UnsignedMessage":
-        """Decode from protobuf bytes."""
-        fields = parse_fields(data)
-        return cls(sub_message=fields.get(1, [(0, b"")])[0][1])
+        msg = vcsec_pb2.UnsignedMessage()
+        if self.sub_message:
+            msg.InformationRequest.ParseFromString(self.sub_message)
+        return msg.SerializeToString()
 
 
 # VCSEC Messages
@@ -417,12 +270,13 @@ class InformationRequest:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        result = encode_field(1, WIRE_VARINT, self.request_type)
+        msg = vcsec_pb2.InformationRequest()
+        msg.informationRequestType = self.request_type
         if self.key_slot:
-            result += encode_field(2, WIRE_VARINT, self.key_slot)
+            msg.slot = self.key_slot
         if self.public_key:
-            result += encode_field(3, WIRE_LENGTH_DELIMITED, self.public_key)
-        return result
+            msg.publicKey = self.public_key
+        return msg.SerializeToString()
 
 
 @dataclass
@@ -433,7 +287,9 @@ class RKEActionMessage:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        return encode_field(1, WIRE_VARINT, self.action)
+        msg = vcsec_pb2.UnsignedMessage()
+        msg.RKEAction = self.action
+        return msg.SerializeToString()
 
 
 @dataclass
@@ -451,90 +307,24 @@ class ClosureMoveRequest:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        result = b""
+        msg = vcsec_pb2.ClosureMoveRequest()
         if self.front_driver_door is not None:
-            result += encode_field(1, WIRE_VARINT, self.front_driver_door)
+            msg.frontDriverDoor = self.front_driver_door
         if self.front_passenger_door is not None:
-            result += encode_field(2, WIRE_VARINT, self.front_passenger_door)
+            msg.frontPassengerDoor = self.front_passenger_door
         if self.rear_driver_door is not None:
-            result += encode_field(3, WIRE_VARINT, self.rear_driver_door)
+            msg.rearDriverDoor = self.rear_driver_door
         if self.rear_passenger_door is not None:
-            result += encode_field(4, WIRE_VARINT, self.rear_passenger_door)
+            msg.rearPassengerDoor = self.rear_passenger_door
         if self.rear_trunk is not None:
-            result += encode_field(5, WIRE_VARINT, self.rear_trunk)
+            msg.rearTrunk = self.rear_trunk
         if self.front_trunk is not None:
-            result += encode_field(6, WIRE_VARINT, self.front_trunk)
+            msg.frontTrunk = self.front_trunk
         if self.charge_port is not None:
-            result += encode_field(7, WIRE_VARINT, self.charge_port)
+            msg.chargePort = self.charge_port
         if self.tonneau is not None:
-            result += encode_field(8, WIRE_VARINT, self.tonneau)
-        return result
-
-
-@dataclass
-class KeyIdentity:
-    """Key identity (public key or handle)."""
-
-    public_key: bytes | None = None
-    handle: int | None = None
-
-    def encode(self) -> bytes:
-        """Encode to protobuf bytes."""
-        if self.public_key:
-            return encode_field(1, WIRE_LENGTH_DELIMITED, self.public_key)
-        if self.handle is not None:
-            return encode_field(3, WIRE_VARINT, self.handle)
-        return b""
-
-
-@dataclass
-class PermissionChange:
-    """Permission change for whitelist operation."""
-
-    key: KeyIdentity = field(default_factory=KeyIdentity)
-    second_factor_required: bool = False
-
-    def encode(self) -> bytes:
-        """Encode to protobuf bytes."""
-        result = encode_field(1, WIRE_LENGTH_DELIMITED, self.key.encode())
-        if self.second_factor_required:
-            result += encode_field(2, WIRE_VARINT, 1)
-        return result
-
-
-@dataclass
-class WhitelistOperation:
-    """Whitelist operation (add/remove key)."""
-
-    operation: WhitelistOperationType = WhitelistOperationType.ADD_KEY_TO_WHITELIST
-    public_key_to_add: bytes | None = None
-    public_key_to_remove: bytes | None = None
-    key_to_add_permissions: PermissionChange | None = None
-    key_to_remove_permissions: PermissionChange | None = None
-    metadata_for_key: KeyMetadata | None = None
-
-    def encode(self) -> bytes:
-        """Encode to protobuf bytes."""
-        inner = b""
-        if self.public_key_to_add:
-            inner += encode_field(1, WIRE_LENGTH_DELIMITED, self.public_key_to_add)
-        if self.public_key_to_remove:
-            inner += encode_field(2, WIRE_LENGTH_DELIMITED, self.public_key_to_remove)
-        if self.key_to_add_permissions:
-            inner += encode_field(
-                3, WIRE_LENGTH_DELIMITED, self.key_to_add_permissions.encode()
-            )
-        if self.key_to_remove_permissions:
-            inner += encode_field(
-                4, WIRE_LENGTH_DELIMITED, self.key_to_remove_permissions.encode()
-            )
-        if self.metadata_for_key:
-            inner += encode_field(
-                5, WIRE_LENGTH_DELIMITED, self.metadata_for_key.encode()
-            )
-
-        # Wrap in WhitelistOperation_information_request field
-        return encode_field(16, WIRE_LENGTH_DELIMITED, inner)
+            msg.tonneau = self.tonneau
+        return msg.SerializeToString()
 
 
 @dataclass
@@ -544,12 +334,45 @@ class KeyMetadata:
     key_form_factor: KeyFormFactor = KeyFormFactor.CLOUD_KEY
     key_name: str = ""
 
+    def to_proto(self) -> vcsec_pb2.KeyMetadata:
+        """Convert to protobuf message."""
+        msg = vcsec_pb2.KeyMetadata()
+        msg.keyFormFactor = self.key_form_factor
+        if self.key_name:
+            msg.keyName = self.key_name
+        return msg
+
+
+@dataclass
+class WhitelistOperation:
+    """Whitelist operation (add/remove key)."""
+
+    public_key_to_add: bytes | None = None
+    public_key_to_remove: bytes | None = None
+    metadata_for_key: KeyMetadata | None = None
+
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        result = encode_field(1, WIRE_VARINT, self.key_form_factor)
-        if self.key_name:
-            result += encode_field(2, WIRE_LENGTH_DELIMITED, self.key_name.encode())
-        return result
+        msg = vcsec_pb2.WhitelistOperation()
+        
+        if self.public_key_to_add:
+            public_key = vcsec_pb2.PublicKey()
+            public_key.PublicKeyRaw = self.public_key_to_add
+            
+            # Create permission change with key
+            perm = vcsec_pb2.PermissionChange()
+            perm.key.CopyFrom(public_key)
+            msg.addKeyToWhitelistAndAddPermissions.CopyFrom(perm)
+            
+        if self.public_key_to_remove:
+            public_key = vcsec_pb2.PublicKey()
+            public_key.PublicKeyRaw = self.public_key_to_remove
+            msg.removePublicKeyFromWhitelist.CopyFrom(public_key)
+            
+        if self.metadata_for_key:
+            msg.metadataForKey.CopyFrom(self.metadata_for_key.to_proto())
+            
+        return msg.SerializeToString()
 
 
 @dataclass
@@ -565,23 +388,27 @@ class VCSECMessage:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
+        msg = vcsec_pb2.UnsignedMessage()
+        
         if self.information_request:
-            return encode_field(
-                1, WIRE_LENGTH_DELIMITED, self.information_request.encode()
-            )
-        if self.rke_action:
-            return encode_field(2, WIRE_LENGTH_DELIMITED, self.rke_action.encode())
-        if self.closure_move_request:
-            return encode_field(
-                4, WIRE_LENGTH_DELIMITED, self.closure_move_request.encode()
-            )
-        if self.whitelist_operation:
-            return encode_field(
-                16, WIRE_LENGTH_DELIMITED, self.whitelist_operation.encode()
-            )
-        if self.signed_message:
-            return encode_field(2, WIRE_LENGTH_DELIMITED, self.signed_message)
-        return b""
+            info_req = vcsec_pb2.InformationRequest()
+            info_req.ParseFromString(self.information_request.encode())
+            msg.InformationRequest.CopyFrom(info_req)
+        elif self.rke_action:
+            msg.RKEAction = self.rke_action.action
+        elif self.closure_move_request:
+            closure_req = vcsec_pb2.ClosureMoveRequest()
+            closure_req.ParseFromString(self.closure_move_request.encode())
+            msg.closureMoveRequest.CopyFrom(closure_req)
+        elif self.whitelist_operation:
+            whitelist_op = vcsec_pb2.WhitelistOperation()
+            whitelist_op.ParseFromString(self.whitelist_operation.encode())
+            msg.WhitelistOperation.CopyFrom(whitelist_op)
+        elif self.signed_message:
+            # For signed messages, return the signed message directly
+            return self.signed_message
+            
+        return msg.SerializeToString()
 
 
 # Vehicle state response parsing
@@ -601,18 +428,17 @@ class ClosureStatus:
     tonneau: int = 0
 
     @classmethod
-    def decode(cls, data: bytes) -> "ClosureStatus":
-        """Decode from protobuf bytes."""
-        fields = parse_fields(data)
+    def from_proto(cls, proto: vcsec_pb2.ClosureStatuses) -> ClosureStatus:
+        """Create from protobuf message."""
         return cls(
-            front_driver_door=fields.get(1, [(0, 0)])[0][1],
-            front_passenger_door=fields.get(2, [(0, 0)])[0][1],
-            rear_driver_door=fields.get(3, [(0, 0)])[0][1],
-            rear_passenger_door=fields.get(4, [(0, 0)])[0][1],
-            rear_trunk=fields.get(5, [(0, 0)])[0][1],
-            front_trunk=fields.get(6, [(0, 0)])[0][1],
-            charge_port=fields.get(7, [(0, 0)])[0][1],
-            tonneau=fields.get(8, [(0, 0)])[0][1],
+            front_driver_door=proto.frontDriverDoor,
+            front_passenger_door=proto.frontPassengerDoor,
+            rear_driver_door=proto.rearDriverDoor,
+            rear_passenger_door=proto.rearPassengerDoor,
+            rear_trunk=proto.rearTrunk,
+            front_trunk=proto.frontTrunk,
+            charge_port=proto.chargePort,
+            tonneau=proto.tonneau,
         )
 
 
@@ -626,17 +452,20 @@ class VehicleStatus:
     user_presence: bool = False
 
     @classmethod
-    def decode(cls, data: bytes) -> "VehicleStatus":
-        """Decode from protobuf bytes."""
-        fields = parse_fields(data)
+    def from_proto(cls, proto: vcsec_pb2.VehicleStatus) -> VehicleStatus:
+        """Create from protobuf message."""
         closure_status = None
-        if 1 in fields:
-            closure_status = ClosureStatus.decode(fields[1][0][1])
+        if proto.HasField("closureStatuses"):
+            closure_status = ClosureStatus.from_proto(proto.closureStatuses)
+            
+        # Convert user_presence enum to bool
+        user_presence = proto.userPresence == 2  # VEHICLE_USER_PRESENCE_PRESENT
+            
         return cls(
             closure_statuses=closure_status,
-            lock_state=fields.get(2, [(0, 0)])[0][1],
-            sleep_status=fields.get(3, [(0, 0)])[0][1],
-            user_presence=bool(fields.get(4, [(0, 0)])[0][1]),
+            lock_state=proto.vehicleLockState,
+            sleep_status=proto.vehicleSleepStatus,
+            user_presence=user_presence,
         )
 
 
@@ -648,13 +477,30 @@ class CommandStatus:
     which_error: int = 0
 
     @classmethod
-    def decode(cls, data: bytes) -> "CommandStatus":
-        """Decode from protobuf bytes."""
-        fields = parse_fields(data)
+    def from_proto(cls, proto: vcsec_pb2.CommandStatus) -> CommandStatus:
+        """Create from protobuf message."""
+        which_error = 0
+        if proto.HasField("signedMessageStatus"):
+            which_error = proto.signedMessageStatus.signedMessageInformation
+        elif proto.HasField("whitelistOperationStatus"):
+            which_error = proto.whitelistOperationStatus.whitelistOperationInformation
+            
         return cls(
-            operation_status=OperationStatus(fields.get(1, [(0, 0)])[0][1]),
-            which_error=fields.get(4, [(0, 0)])[0][1],
+            operation_status=OperationStatus(proto.operationStatus),
+            which_error=which_error,
         )
+
+
+@dataclass
+class NominalError:
+    """Generic error from vehicle."""
+
+    generic_error: GenericError = GenericError.NONE
+
+    @classmethod
+    def from_proto(cls, proto: errors_pb2.NominalError) -> NominalError:
+        """Create from protobuf message."""
+        return cls(generic_error=GenericError(proto.genericError))
 
 
 @dataclass
@@ -665,28 +511,38 @@ class VCSECResponse:
     command_status: CommandStatus | None = None
     whitelist_info: bytes | None = None
     whitelist_entry_info: bytes | None = None
+    nominal_error: NominalError | None = None
 
     @classmethod
-    def decode(cls, data: bytes) -> "VCSECResponse":
+    def decode(cls, data: bytes) -> VCSECResponse:
         """Decode from protobuf bytes."""
-        fields = parse_fields(data)
+        msg = vcsec_pb2.FromVCSECMessage()
+        msg.ParseFromString(data)
+        
         vehicle_status = None
+        if msg.HasField("vehicleStatus"):
+            vehicle_status = VehicleStatus.from_proto(msg.vehicleStatus)
+            
         command_status = None
+        if msg.HasField("commandStatus"):
+            command_status = CommandStatus.from_proto(msg.commandStatus)
+            
         whitelist_info = None
+        if msg.HasField("whitelistInfo"):
+            whitelist_info = msg.whitelistInfo.SerializeToString()
+            
         whitelist_entry_info = None
-
-        if 1 in fields:
-            vehicle_status = VehicleStatus.decode(fields[1][0][1])
-        if 4 in fields:
-            command_status = CommandStatus.decode(fields[4][0][1])
-        if 16 in fields:
-            whitelist_info = fields[16][0][1]
-        if 17 in fields:
-            whitelist_entry_info = fields[17][0][1]
-
+        if msg.HasField("whitelistEntryInfo"):
+            whitelist_entry_info = msg.whitelistEntryInfo.SerializeToString()
+            
+        nominal_error = None
+        if msg.HasField("nominalError"):
+            nominal_error = NominalError.from_proto(msg.nominalError)
+            
         return cls(
             vehicle_status=vehicle_status,
             command_status=command_status,
             whitelist_info=whitelist_info,
             whitelist_entry_info=whitelist_entry_info,
+            nominal_error=nominal_error,
         )

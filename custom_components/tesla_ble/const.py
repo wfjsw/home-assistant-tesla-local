@@ -179,3 +179,16 @@ class ChargingAction(IntEnum):
     STOP = 1
     START_STANDARD = 2
     START_MAX_RANGE = 3
+
+
+class GenericError(IntEnum):
+    """Generic error codes from vehicle."""
+
+    NONE = 0
+    UNKNOWN = 1
+    CLOSURES_OPEN = 2
+    ALREADY_ON = 3
+    DISABLED_FOR_USER_COMMAND = 4
+    VEHICLE_NOT_IN_PARK = 5
+    UNAUTHORIZED = 6
+    NOT_ALLOWED_OVER_TRANSPORT = 7

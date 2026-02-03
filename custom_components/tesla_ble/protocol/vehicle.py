@@ -20,6 +20,7 @@ from ..const import (
     RX_TIMEOUT,
     CONNECTION_TIMEOUT,
     Domain,
+    GenericError,
     OperationStatus,
     RKEAction,
     ClosureMoveType,
@@ -42,8 +43,6 @@ from .messages import (
     VCSECResponse,
     WhitelistOperation,
     KeyMetadata,
-    KeyIdentity,
-    PermissionChange,
 )
 
 if TYPE_CHECKING:
@@ -338,15 +337,52 @@ class TeslaBLEVehicle:
             return VCSECResponse.decode(response.payload)
         return None
 
+    def _check_response_error(self, response: VCSECResponse | None) -> tuple[bool, str | None]:
+        """Check response for errors.
+        
+        Returns:
+            Tuple of (success, error_message)
+        """
+        if not response:
+            return False, "No response from vehicle"
+            
+        # Check for nominal error first
+        if response.nominal_error:
+            error = response.nominal_error.generic_error
+            if error != GenericError.NONE:
+                error_msgs = {
+                    GenericError.UNKNOWN: "Unknown error",
+                    GenericError.CLOSURES_OPEN: "Closures are open",
+                    GenericError.ALREADY_ON: "Already on",
+                    GenericError.DISABLED_FOR_USER_COMMAND: "Disabled for user command",
+                    GenericError.VEHICLE_NOT_IN_PARK: "Vehicle not in park",
+                    GenericError.UNAUTHORIZED: "Unauthorized",
+                    GenericError.NOT_ALLOWED_OVER_TRANSPORT: "Not allowed over this transport",
+                }
+                error_msg = error_msgs.get(error, f"Error code {error}")
+                return False, error_msg
+        
+        # Check command status
+        if response.command_status:
+            if response.command_status.operation_status == OperationStatus.OK:
+                return True, None
+            elif response.command_status.operation_status == OperationStatus.ERROR:
+                return False, "Command returned error status"
+            elif response.command_status.operation_status == OperationStatus.WAIT:
+                return False, "Command returned wait status"
+        
+        return False, "No command status in response"
+
     async def wake(self) -> bool:
         """Wake up the vehicle."""
         _LOGGER.info("Waking vehicle")
         vcsec = VCSECMessage(rke_action=RKEActionMessage(action=RKEAction.WAKE_VEHICLE))
         response = await self._send_vcsec_command(vcsec)
 
-        if response and response.command_status:
-            return response.command_status.operation_status == OperationStatus.OK
-        return False
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Wake failed: %s", error_msg)
+        return success
 
     async def lock(self) -> bool:
         """Lock the vehicle."""
@@ -354,12 +390,12 @@ class TeslaBLEVehicle:
         vcsec = VCSECMessage(rke_action=RKEActionMessage(action=RKEAction.LOCK))
         response = await self._send_vcsec_command(vcsec)
 
-        if response and response.command_status:
-            success = response.command_status.operation_status == OperationStatus.OK
-            if success:
-                self._state.lock_state = VehicleLockState.LOCKED
-            return success
-        return False
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Lock failed: %s", error_msg)
+        elif success:
+            self._state.lock_state = VehicleLockState.LOCKED
+        return success
 
     async def unlock(self) -> bool:
         """Unlock the vehicle."""
@@ -367,12 +403,12 @@ class TeslaBLEVehicle:
         vcsec = VCSECMessage(rke_action=RKEActionMessage(action=RKEAction.UNLOCK))
         response = await self._send_vcsec_command(vcsec)
 
-        if response and response.command_status:
-            success = response.command_status.operation_status == OperationStatus.OK
-            if success:
-                self._state.lock_state = VehicleLockState.UNLOCKED
-            return success
-        return False
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Unlock failed: %s", error_msg)
+        elif success:
+            self._state.lock_state = VehicleLockState.UNLOCKED
+        return success
 
     async def open_trunk(self) -> bool:
         """Open the rear trunk."""
@@ -384,9 +420,10 @@ class TeslaBLEVehicle:
         )
         response = await self._send_vcsec_command(vcsec)
 
-        if response and response.command_status:
-            return response.command_status.operation_status == OperationStatus.OK
-        return False
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Open trunk failed: %s", error_msg)
+        return success
 
     async def open_frunk(self) -> bool:
         """Open the front trunk (frunk)."""
@@ -398,9 +435,10 @@ class TeslaBLEVehicle:
         )
         response = await self._send_vcsec_command(vcsec)
 
-        if response and response.command_status:
-            return response.command_status.operation_status == OperationStatus.OK
-        return False
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Open frunk failed: %s", error_msg)
+        return success
 
     async def open_charge_port(self) -> bool:
         """Open the charge port."""
@@ -412,9 +450,10 @@ class TeslaBLEVehicle:
         )
         response = await self._send_vcsec_command(vcsec)
 
-        if response and response.command_status:
-            return response.command_status.operation_status == OperationStatus.OK
-        return False
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Open charge port failed: %s", error_msg)
+        return success
 
     async def close_charge_port(self) -> bool:
         """Close the charge port."""
@@ -426,9 +465,10 @@ class TeslaBLEVehicle:
         )
         response = await self._send_vcsec_command(vcsec)
 
-        if response and response.command_status:
-            return response.command_status.operation_status == OperationStatus.OK
-        return False
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Close charge port failed: %s", error_msg)
+        return success
 
     async def get_vehicle_status(self) -> VehicleState:
         """Get current vehicle status."""
@@ -439,6 +479,15 @@ class TeslaBLEVehicle:
             )
         )
         response = await self._send_vcsec_command(vcsec)
+
+        # Check for errors first
+        if response and response.nominal_error:
+            if response.nominal_error.generic_error != GenericError.NONE:
+                _LOGGER.warning(
+                    "Get vehicle status error: %s",
+                    response.nominal_error.generic_error.name
+                )
+                return self._state
 
         if response and response.vehicle_status:
             status = response.vehicle_status
@@ -503,11 +552,10 @@ class TeslaBLEVehicle:
 
         if response and response.payload:
             vcsec_response = VCSECResponse.decode(response.payload)
-            if vcsec_response.command_status:
-                return (
-                    vcsec_response.command_status.operation_status
-                    == OperationStatus.OK
-                )
+            success, error_msg = self._check_response_error(vcsec_response)
+            if not success:
+                _LOGGER.warning("Add key to whitelist failed: %s", error_msg)
+            return success
 
         return False
 
@@ -529,6 +577,7 @@ class TeslaBLEVehicle:
         vcsec = VCSECMessage(whitelist_operation=whitelist_op)
         response = await self._send_vcsec_command(vcsec)
 
-        if response and response.command_status:
-            return response.command_status.operation_status == OperationStatus.OK
-        return False
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Remove key from whitelist failed: %s", error_msg)
+        return success
