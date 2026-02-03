@@ -18,10 +18,10 @@ from ..const import (
 
 # Import generated protobuf classes
 from .protos_py import (
-    errors_pb2,
-    signatures_pb2,
-    universal_message_pb2,
-    vcsec_pb2,
+    tesla_errors_pb2,
+    tesla_signatures_pb2,
+    tesla_universal_message_pb2,
+    tesla_vcsec_pb2,
 )
 
 
@@ -35,9 +35,9 @@ class Destination:
     domain: Domain | None = None
     routing_address: bytes | None = None
 
-    def to_proto(self) -> universal_message_pb2.Destination:
+    def to_proto(self) -> tesla_universal_message_pb2.Destination:
         """Convert to protobuf message."""
-        dest = universal_message_pb2.Destination()
+        dest = tesla_universal_message_pb2.Destination()
         if self.domain is not None:
             dest.domain = self.domain
         if self.routing_address is not None:
@@ -45,7 +45,7 @@ class Destination:
         return dest
 
     @classmethod
-    def from_proto(cls, proto: universal_message_pb2.Destination) -> Destination:
+    def from_proto(cls, proto: tesla_universal_message_pb2.Destination) -> Destination:
         """Create from protobuf message."""
         domain = None
         routing_address = None
@@ -68,10 +68,10 @@ class SignatureData:
     expires_at: int = 0
     tag: bytes = field(default_factory=bytes)
 
-    def to_proto(self) -> signatures_pb2.SignatureData:
+    def to_proto(self) -> tesla_signatures_pb2.SignatureData:
         """Convert to protobuf message."""
-        sig_data = signatures_pb2.SignatureData()
-        aes_gcm_data = signatures_pb2.AES_GCM_Personalized_Signature_Data()
+        sig_data = tesla_signatures_pb2.SignatureData()
+        aes_gcm_data = tesla_signatures_pb2.AES_GCM_Personalized_Signature_Data()
         aes_gcm_data.epoch = self.epoch
         aes_gcm_data.nonce = self.nonce
         aes_gcm_data.counter = self.counter
@@ -81,7 +81,7 @@ class SignatureData:
         return sig_data
 
     @classmethod
-    def from_proto(cls, proto: signatures_pb2.SignatureData) -> SignatureData:
+    def from_proto(cls, proto: tesla_signatures_pb2.SignatureData) -> SignatureData:
         """Create from protobuf message."""
         if proto.HasField("AES_GCM_Personalized_data"):
             aes_gcm_data = proto.AES_GCM_Personalized_data
@@ -102,15 +102,15 @@ class SessionInfoRequest:
     public_key: bytes = field(default_factory=bytes)
     challenge: bytes = field(default_factory=bytes)
 
-    def to_proto(self) -> universal_message_pb2.SessionInfoRequest:
+    def to_proto(self) -> tesla_universal_message_pb2.SessionInfoRequest:
         """Convert to protobuf message."""
-        req = universal_message_pb2.SessionInfoRequest()
+        req = tesla_universal_message_pb2.SessionInfoRequest()
         req.public_key = self.public_key
         req.challenge = self.challenge
         return req
 
     @classmethod
-    def from_proto(cls, proto: universal_message_pb2.SessionInfoRequest) -> SessionInfoRequest:
+    def from_proto(cls, proto: tesla_universal_message_pb2.SessionInfoRequest) -> SessionInfoRequest:
         """Create from protobuf message."""
         return cls(
             public_key=proto.public_key,
@@ -129,7 +129,7 @@ class SessionInfo:
     status: int = 0
 
     @classmethod
-    def from_proto(cls, proto: signatures_pb2.SessionInfo) -> SessionInfo:
+    def from_proto(cls, proto: tesla_signatures_pb2.SessionInfo) -> SessionInfo:
         """Create from protobuf message."""
         return cls(
             public_key=proto.publicKey,
@@ -148,7 +148,7 @@ class MessageStatus:
     message_fault: int = 0
 
     @classmethod
-    def from_proto(cls, proto: universal_message_pb2.MessageStatus) -> MessageStatus:
+    def from_proto(cls, proto: tesla_universal_message_pb2.MessageStatus) -> MessageStatus:
         """Create from protobuf message."""
         return cls(
             operation_status=OperationStatus(proto.operation_status),
@@ -172,7 +172,7 @@ class RoutableMessage:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        msg = universal_message_pb2.RoutableMessage()
+        msg = tesla_universal_message_pb2.RoutableMessage()
         
         msg.to_destination.CopyFrom(self.to_destination.to_proto())
         msg.from_destination.CopyFrom(self.from_destination.to_proto())
@@ -201,7 +201,7 @@ class RoutableMessage:
     @classmethod
     def decode(cls, data: bytes) -> RoutableMessage:
         """Decode from protobuf bytes."""
-        msg = universal_message_pb2.RoutableMessage()
+        msg = tesla_universal_message_pb2.RoutableMessage()
         msg.ParseFromString(data)
         
         to_dest = Destination.from_proto(msg.to_destination)
@@ -218,7 +218,7 @@ class RoutableMessage:
         session_info = None
         if msg.HasField("session_info"):
             # Parse session info from bytes
-            session_info_proto = signatures_pb2.SessionInfo()
+            session_info_proto = tesla_signatures_pb2.SessionInfo()
             session_info_proto.ParseFromString(msg.session_info)
             session_info = SessionInfo.from_proto(session_info_proto)
             
@@ -251,7 +251,7 @@ class UnsignedMessage:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        msg = vcsec_pb2.UnsignedMessage()
+        msg = tesla_vcsec_pb2.UnsignedMessage()
         if self.sub_message:
             msg.InformationRequest.ParseFromString(self.sub_message)
         return msg.SerializeToString()
@@ -270,7 +270,7 @@ class InformationRequest:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        msg = vcsec_pb2.InformationRequest()
+        msg = tesla_vcsec_pb2.InformationRequest()
         msg.informationRequestType = self.request_type
         if self.key_slot:
             msg.slot = self.key_slot
@@ -287,7 +287,7 @@ class RKEActionMessage:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        msg = vcsec_pb2.UnsignedMessage()
+        msg = tesla_vcsec_pb2.UnsignedMessage()
         msg.RKEAction = self.action
         return msg.SerializeToString()
 
@@ -307,7 +307,7 @@ class ClosureMoveRequest:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        msg = vcsec_pb2.ClosureMoveRequest()
+        msg = tesla_vcsec_pb2.ClosureMoveRequest()
         if self.front_driver_door is not None:
             msg.frontDriverDoor = self.front_driver_door
         if self.front_passenger_door is not None:
@@ -334,9 +334,9 @@ class KeyMetadata:
     key_form_factor: KeyFormFactor = KeyFormFactor.CLOUD_KEY
     key_name: str = ""
 
-    def to_proto(self) -> vcsec_pb2.KeyMetadata:
+    def to_proto(self) -> tesla_vcsec_pb2.KeyMetadata:
         """Convert to protobuf message."""
-        msg = vcsec_pb2.KeyMetadata()
+        msg = tesla_vcsec_pb2.KeyMetadata()
         msg.keyFormFactor = self.key_form_factor
         if self.key_name:
             msg.keyName = self.key_name
@@ -353,19 +353,19 @@ class WhitelistOperation:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        msg = vcsec_pb2.WhitelistOperation()
+        msg = tesla_vcsec_pb2.WhitelistOperation()
         
         if self.public_key_to_add:
-            public_key = vcsec_pb2.PublicKey()
+            public_key = tesla_vcsec_pb2.PublicKey()
             public_key.PublicKeyRaw = self.public_key_to_add
             
             # Create permission change with key
-            perm = vcsec_pb2.PermissionChange()
+            perm = tesla_vcsec_pb2.PermissionChange()
             perm.key.CopyFrom(public_key)
             msg.addKeyToWhitelistAndAddPermissions.CopyFrom(perm)
             
         if self.public_key_to_remove:
-            public_key = vcsec_pb2.PublicKey()
+            public_key = tesla_vcsec_pb2.PublicKey()
             public_key.PublicKeyRaw = self.public_key_to_remove
             msg.removePublicKeyFromWhitelist.CopyFrom(public_key)
             
@@ -388,20 +388,20 @@ class VCSECMessage:
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
-        msg = vcsec_pb2.UnsignedMessage()
+        msg = tesla_vcsec_pb2.UnsignedMessage()
         
         if self.information_request:
-            info_req = vcsec_pb2.InformationRequest()
+            info_req = tesla_vcsec_pb2.InformationRequest()
             info_req.ParseFromString(self.information_request.encode())
             msg.InformationRequest.CopyFrom(info_req)
         elif self.rke_action:
             msg.RKEAction = self.rke_action.action
         elif self.closure_move_request:
-            closure_req = vcsec_pb2.ClosureMoveRequest()
+            closure_req = tesla_vcsec_pb2.ClosureMoveRequest()
             closure_req.ParseFromString(self.closure_move_request.encode())
             msg.closureMoveRequest.CopyFrom(closure_req)
         elif self.whitelist_operation:
-            whitelist_op = vcsec_pb2.WhitelistOperation()
+            whitelist_op = tesla_vcsec_pb2.WhitelistOperation()
             whitelist_op.ParseFromString(self.whitelist_operation.encode())
             msg.WhitelistOperation.CopyFrom(whitelist_op)
         elif self.signed_message:
@@ -428,7 +428,7 @@ class ClosureStatus:
     tonneau: int = 0
 
     @classmethod
-    def from_proto(cls, proto: vcsec_pb2.ClosureStatuses) -> ClosureStatus:
+    def from_proto(cls, proto: tesla_vcsec_pb2.ClosureStatuses) -> ClosureStatus:
         """Create from protobuf message."""
         return cls(
             front_driver_door=proto.frontDriverDoor,
@@ -452,7 +452,7 @@ class VehicleStatus:
     user_presence: bool = False
 
     @classmethod
-    def from_proto(cls, proto: vcsec_pb2.VehicleStatus) -> VehicleStatus:
+    def from_proto(cls, proto: tesla_vcsec_pb2.VehicleStatus) -> VehicleStatus:
         """Create from protobuf message."""
         closure_status = None
         if proto.HasField("closureStatuses"):
@@ -477,7 +477,7 @@ class CommandStatus:
     which_error: int = 0
 
     @classmethod
-    def from_proto(cls, proto: vcsec_pb2.CommandStatus) -> CommandStatus:
+    def from_proto(cls, proto: tesla_vcsec_pb2.CommandStatus) -> CommandStatus:
         """Create from protobuf message."""
         which_error = 0
         if proto.HasField("signedMessageStatus"):
@@ -498,7 +498,7 @@ class NominalError:
     generic_error: GenericError = GenericError.NONE
 
     @classmethod
-    def from_proto(cls, proto: errors_pb2.NominalError) -> NominalError:
+    def from_proto(cls, proto: tesla_errors_pb2.NominalError) -> NominalError:
         """Create from protobuf message."""
         return cls(generic_error=GenericError(proto.genericError))
 
@@ -516,7 +516,7 @@ class VCSECResponse:
     @classmethod
     def decode(cls, data: bytes) -> VCSECResponse:
         """Decode from protobuf bytes."""
-        msg = vcsec_pb2.FromVCSECMessage()
+        msg = tesla_vcsec_pb2.FromVCSECMessage()
         msg.ParseFromString(data)
         
         vehicle_status = None

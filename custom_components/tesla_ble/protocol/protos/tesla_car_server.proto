@@ -5,9 +5,9 @@ package CarServer;
 option java_package = "com.tesla.generated.carserver.server";
 option go_package = "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/carserver";
 
-import "vehicle.proto";
-import "signatures.proto";
-import "common.proto";
+import "tesla_vehicle.proto";
+import "tesla_signatures.proto";
+import "tesla_common.proto";
 import "google/protobuf/timestamp.proto";
 
 message Action {

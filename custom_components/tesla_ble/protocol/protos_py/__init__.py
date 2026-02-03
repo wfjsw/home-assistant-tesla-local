@@ -13,13 +13,13 @@ from types import ModuleType
 
 # List of generated modules in this package
 __all__ = [
-    "car_server_pb2",
-    "common_pb2",
-    "errors_pb2",
-    "keys_pb2",
-    "managed_charging_pb2",
-    "signatures_pb2",
-    "universal_message_pb2",
-    "vcsec_pb2",
-    "vehicle_pb2",
+    "tesla_car_server_pb2",
+    "tesla_common_pb2",
+    "tesla_errors_pb2",
+    "tesla_keys_pb2",
+    "tesla_managed_charging_pb2",
+    "tesla_signatures_pb2",
+    "tesla_universal_message_pb2",
+    "tesla_vcsec_pb2",
+    "tesla_vehicle_pb2",
 ]

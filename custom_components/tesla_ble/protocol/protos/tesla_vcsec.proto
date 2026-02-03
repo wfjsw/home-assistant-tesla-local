@@ -4,8 +4,8 @@ package VCSEC;
 option java_package = "com.tesla.generated.vcsec";
 option go_package = "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/vcsec";
 
-import "keys.proto";
-import "errors.proto";
+import "tesla_keys.proto";
+import "tesla_errors.proto";
 
 enum SignatureType
 {

@@ -5,7 +5,7 @@ package UniversalMessage;
 option go_package = "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/universalmessage";
 option java_package = "com.tesla.generated.universalmessage";
 
-import "signatures.proto";
+import "tesla_signatures.proto";
 
 enum Domain {
     DOMAIN_BROADCAST = 0;

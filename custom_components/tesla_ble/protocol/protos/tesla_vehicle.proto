@@ -3,9 +3,9 @@ syntax = "proto3";
 package CarServer;
 import "google/protobuf/timestamp.proto";
 
-import "vcsec.proto";
-import "common.proto";
-import "managed_charging.proto";
+import "tesla_vcsec.proto";
+import "tesla_common.proto";
+import "tesla_managed_charging.proto";
 
 option go_package = "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/carserver";
 option java_package = "com.tesla.generated.carserver.vehicle";
@@ -279,12 +279,12 @@ message ChargeState {
     }
 
     enum PowershareStatus {
-        PowershareStatusInactive = 0;                // disconnected or connected, but don't know if powershare capable
-        PowershareStatusInit    = 1;                 // initializing
-        PowershareStatusActive  = 2;                 // actively powersharing
-        PowershareStatusStopped = 3;                 // powersharing has stopped - either standby or faulted or blocked; look at stopReason
-        PowershareStatusHandshaking = 4;             // powersharing is handshaking
-        PowershareStatusActiveReconnectingSoon = 5;  // powersharing is active, but reconnecting soon
+        PowershareStatusInactive = 0; // disconnected or connected, but don't know if powershare capable
+        PowershareStatusInit    = 1; // initializing
+        PowershareStatusActive  = 2; // actively powersharing
+        PowershareStatusStopped = 3; // powersharing has stopped - either standby or faulted or blocked; look at stopReason
+        PowershareStatusHandshaking = 4; // powersharing is handshaking
+        PowershareStatusActiveReconnectingSoon = 5; // powersharing is active, but reconnecting soon
     }
 
     enum PowershareType {
