@@ -488,18 +488,14 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
+        _config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Get the options flow for this handler."""
-        return TeslaBLEOptionsFlowHandler(config_entry)
+        return TeslaBLEOptionsFlowHandler()
 
 
 class TeslaBLEOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Tesla BLE options."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
