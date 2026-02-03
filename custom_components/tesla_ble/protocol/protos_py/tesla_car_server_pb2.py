@@ -22,9 +22,9 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-import tesla_vehicle_pb2 as tesla__vehicle__pb2
-import tesla_signatures_pb2 as tesla__signatures__pb2
-import tesla_common_pb2 as tesla__common__pb2
+from . import tesla_vehicle_pb2 as tesla__vehicle__pb2
+from . import tesla_signatures_pb2 as tesla__signatures__pb2
+from . import tesla_common_pb2 as tesla__common__pb2
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
