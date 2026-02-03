@@ -15,6 +15,7 @@ from ..const import (
     KeyRole,
     OperationStatus,
     RKEAction,
+    SignatureType,
 )
 
 # Import generated protobuf classes
@@ -409,6 +410,31 @@ class VCSECMessage:
             return self.signed_message
             
         return msg.SerializeToString()
+
+
+@dataclass
+class ToVCSECMessage:
+    """Wrapper for messages sent to VCSEC domain.
+
+    This wraps an UnsignedMessage in a SignedMessage with the appropriate
+    signature type, then wraps that in a ToVCSECMessage envelope.
+    """
+
+    unsigned_message: bytes = field(default_factory=bytes)
+    signature_type: SignatureType = SignatureType.PRESENT_KEY
+
+    def encode(self) -> bytes:
+        """Encode to protobuf bytes."""
+        # Create SignedMessage with the unsigned message payload
+        signed_msg = tesla_vcsec_pb2.SignedMessage()
+        signed_msg.protobufMessageAsBytes = self.unsigned_message
+        signed_msg.signatureType = self.signature_type
+
+        # Wrap in ToVCSECMessage
+        to_vcsec = tesla_vcsec_pb2.ToVCSECMessage()
+        to_vcsec.signedMessage.CopyFrom(signed_msg)
+
+        return to_vcsec.SerializeToString()
 
 
 # Vehicle state response parsing

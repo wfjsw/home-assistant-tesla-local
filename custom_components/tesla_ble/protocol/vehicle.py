@@ -40,6 +40,7 @@ from .messages import (
     VCSECResponse,
     WhitelistOperation,
     KeyMetadata,
+    ToVCSECMessage,
 )
 
 if TYPE_CHECKING:
@@ -543,44 +544,56 @@ class TeslaBLEVehicle:
     ) -> bool:
         """Add our public key to the vehicle's whitelist.
 
-        This requires the user to tap their key card on the center console
-        within 30 seconds of sending the command.
+        This is a "fire-and-forget" operation that sends the add-key request
+        to the vehicle. The user must then tap their NFC key card on the
+        center console to authorize the key.
+
+        Note: This method returns True as soon as the request is transmitted.
+        A True return value does NOT guarantee the key was added - the user
+        must complete the NFC card tap to authorize the new key.
 
         Returns:
-            True if the key was added successfully.
+            True if the request was sent successfully.
         """
-        _LOGGER.info("Adding key to vehicle whitelist")
+        if not self.is_connected:
+            if not await self.connect():
+                return False
 
+        _LOGGER.info("Sending add-key request to vehicle whitelist")
+
+        # Build the whitelist operation with our public key
         whitelist_op = WhitelistOperation(
             public_key_to_add=self._crypto.public_key_bytes,
             metadata_for_key=KeyMetadata(key_form_factor=KeyFormFactor.NFC_CARD),
         )
 
-        vcsec = VCSECMessage(whitelist_operation=whitelist_op)
+        # Wrap in UnsignedMessage
+        unsigned_msg = VCSECMessage(whitelist_operation=whitelist_op)
 
-        # Send without requiring existing session
+        # Wrap in ToVCSECMessage with SignedMessage (SIGNATURE_TYPE_PRESENT_KEY)
+        # This indicates authentication will be via physical NFC card tap
+        to_vcsec = ToVCSECMessage(unsigned_message=unsigned_msg.encode())
+
+        # Send without requiring existing session (fire-and-forget)
         message = RoutableMessage(
             to_destination=Destination(domain=Domain.VEHICLE_SECURITY),
             from_destination=Destination(
                 routing_address=self._crypto.public_key_bytes
             ),
-            payload=vcsec.encode(),
+            payload=to_vcsec.encode(),
             request_uuid=os.urandom(16),
         )
 
-        # Give user more time to tap their key card
-        response = await self._send_and_receive(message, timeout=35.0)
-
-        if response and response.payload:
-            vcsec_response = VCSECResponse.decode(response.payload)
-            success, error_msg = self._check_response_error(vcsec_response)
-            if not success:
-                _LOGGER.warning("Add key to whitelist failed: %s", error_msg)
-            return success
-        
-        _LOGGER.warning(f"No response received when adding key to whitelist: {response}")
-
-        return False
+        try:
+            encoded = message.encode()
+            await self._send_message(encoded)
+            _LOGGER.info(
+                "Add-key request sent. User must tap NFC card on center console to confirm."
+            )
+            return True
+        except Exception as ex:
+            _LOGGER.error("Failed to send add-key request: %s", ex)
+            return False
 
     async def remove_key_from_whitelist(self, public_key: bytes) -> bool:
         """Remove a key from the vehicle's whitelist.
