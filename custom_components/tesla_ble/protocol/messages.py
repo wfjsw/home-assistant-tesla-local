@@ -677,12 +677,12 @@ class VCSECResponse:
 
         if 1 in fields:
             vehicle_status = VehicleStatus.decode(fields[1][0][1])
-        if 2 in fields:
-            command_status = CommandStatus.decode(fields[2][0][1])
-        if 3 in fields:
-            whitelist_info = fields[3][0][1]
         if 4 in fields:
-            whitelist_entry_info = fields[4][0][1]
+            command_status = CommandStatus.decode(fields[4][0][1])
+        if 16 in fields:
+            whitelist_info = fields[16][0][1]
+        if 17 in fields:
+            whitelist_entry_info = fields[17][0][1]
 
         return cls(
             vehicle_status=vehicle_status,
