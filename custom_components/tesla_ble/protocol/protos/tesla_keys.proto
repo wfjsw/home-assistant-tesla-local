@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package Keys;
+package TeslaProto.Keys;
 option java_package = "com.tesla.generated.keys";
 option go_package = "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/keys";
 

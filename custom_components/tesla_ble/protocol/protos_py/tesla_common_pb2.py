@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12tesla_common.proto\x12\tCarServer\"\x06\n\x04Void\".\n\x07LatLong\x12\x10\n\x08latitude\x18\x01 \x01(\x02\x12\x11\n\tlongitude\x18\x02 \x01(\x02\"\xae\x01\n\x14\x43hargePortLatchState\x12\x1e\n\x03SNA\x18\x01 \x01(\x0b\x32\x0f.CarServer.VoidH\x00\x12%\n\nDisengaged\x18\x02 \x01(\x0b\x32\x0f.CarServer.VoidH\x00\x12\"\n\x07\x45ngaged\x18\x03 \x01(\x0b\x32\x0f.CarServer.VoidH\x00\x12#\n\x08\x42locking\x18\x04 \x01(\x0b\x32\x0f.CarServer.VoidH\x00\x42\x06\n\x04type\"i\n\x14PreconditioningTimes\x12#\n\x08\x61ll_week\x18\x01 \x01(\x0b\x32\x0f.CarServer.VoidH\x00\x12#\n\x08weekdays\x18\x02 \x01(\x0b\x32\x0f.CarServer.VoidH\x00\x42\x07\n\x05times\"i\n\x14OffPeakChargingTimes\x12#\n\x08\x61ll_week\x18\x01 \x01(\x0b\x32\x0f.CarServer.VoidH\x00\x12#\n\x08weekdays\x18\x02 \x01(\x0b\x32\x0f.CarServer.VoidH\x00\x42\x07\n\x05times\"\xda\x01\n\x0e\x43hargeSchedule\x12\n\n\x02id\x18\x01 \x01(\x04\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x14\n\x0c\x64\x61ys_of_week\x18\x03 \x01(\x05\x12\x15\n\rstart_enabled\x18\x04 \x01(\x08\x12\x12\n\nstart_time\x18\x05 \x01(\x05\x12\x13\n\x0b\x65nd_enabled\x18\x06 \x01(\x08\x12\x10\n\x08\x65nd_time\x18\x07 \x01(\x05\x12\x10\n\x08one_time\x18\x08 \x01(\x08\x12\x0f\n\x07\x65nabled\x18\t \x01(\x08\x12\x10\n\x08latitude\x18\n \x01(\x02\x12\x11\n\tlongitude\x18\x0b \x01(\x02\"\xa9\x01\n\x14PreconditionSchedule\x12\n\n\x02id\x18\x01 \x01(\x04\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x14\n\x0c\x64\x61ys_of_week\x18\x03 \x01(\x05\x12\x19\n\x11precondition_time\x18\x04 \x01(\x05\x12\x10\n\x08one_time\x18\x05 \x01(\x08\x12\x0f\n\x07\x65nabled\x18\x06 \x01(\x08\x12\x10\n\x08latitude\x18\x07 \x01(\x02\x12\x11\n\tlongitude\x18\x08 \x01(\x02*\x16\n\x07Invalid\x12\x0b\n\x07INVALID\x10\x00*;\n\x13MediaPlaybackStatus\x12\x0b\n\x07Stopped\x10\x00\x12\x0b\n\x07Playing\x10\x01\x12\n\n\x06Paused\x10\x02*k\n\x0cStwHeatLevel\x12\x18\n\x14StwHeatLevel_Unknown\x10\x00\x12\x14\n\x10StwHeatLevel_Off\x10\x01\x12\x14\n\x10StwHeatLevel_Low\x10\x02\x12\x15\n\x11StwHeatLevel_High\x10\x03\x42n\n$com.tesla.generated.carserver.commonZFgithub.com/teslamotors/vehicle-command/pkg/protocol/protobuf/carserverb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12tesla_common.proto\x12\x14TeslaProto.CarServer\"\x06\n\x04Void\".\n\x07LatLong\x12\x10\n\x08latitude\x18\x01 \x01(\x02\x12\x11\n\tlongitude\x18\x02 \x01(\x02\"\xda\x01\n\x14\x43hargePortLatchState\x12)\n\x03SNA\x18\x01 \x01(\x0b\x32\x1a.TeslaProto.CarServer.VoidH\x00\x12\x30\n\nDisengaged\x18\x02 \x01(\x0b\x32\x1a.TeslaProto.CarServer.VoidH\x00\x12-\n\x07\x45ngaged\x18\x03 \x01(\x0b\x32\x1a.TeslaProto.CarServer.VoidH\x00\x12.\n\x08\x42locking\x18\x04 \x01(\x0b\x32\x1a.TeslaProto.CarServer.VoidH\x00\x42\x06\n\x04type\"\x7f\n\x14PreconditioningTimes\x12.\n\x08\x61ll_week\x18\x01 \x01(\x0b\x32\x1a.TeslaProto.CarServer.VoidH\x00\x12.\n\x08weekdays\x18\x02 \x01(\x0b\x32\x1a.TeslaProto.CarServer.VoidH\x00\x42\x07\n\x05times\"\x7f\n\x14OffPeakChargingTimes\x12.\n\x08\x61ll_week\x18\x01 \x01(\x0b\x32\x1a.TeslaProto.CarServer.VoidH\x00\x12.\n\x08weekdays\x18\x02 \x01(\x0b\x32\x1a.TeslaProto.CarServer.VoidH\x00\x42\x07\n\x05times\"\xda\x01\n\x0e\x43hargeSchedule\x12\n\n\x02id\x18\x01 \x01(\x04\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x14\n\x0c\x64\x61ys_of_week\x18\x03 \x01(\x05\x12\x15\n\rstart_enabled\x18\x04 \x01(\x08\x12\x12\n\nstart_time\x18\x05 \x01(\x05\x12\x13\n\x0b\x65nd_enabled\x18\x06 \x01(\x08\x12\x10\n\x08\x65nd_time\x18\x07 \x01(\x05\x12\x10\n\x08one_time\x18\x08 \x01(\x08\x12\x0f\n\x07\x65nabled\x18\t \x01(\x08\x12\x10\n\x08latitude\x18\n \x01(\x02\x12\x11\n\tlongitude\x18\x0b \x01(\x02\"\xa9\x01\n\x14PreconditionSchedule\x12\n\n\x02id\x18\x01 \x01(\x04\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x14\n\x0c\x64\x61ys_of_week\x18\x03 \x01(\x05\x12\x19\n\x11precondition_time\x18\x04 \x01(\x05\x12\x10\n\x08one_time\x18\x05 \x01(\x08\x12\x0f\n\x07\x65nabled\x18\x06 \x01(\x08\x12\x10\n\x08latitude\x18\x07 \x01(\x02\x12\x11\n\tlongitude\x18\x08 \x01(\x02*\x16\n\x07Invalid\x12\x0b\n\x07INVALID\x10\x00*;\n\x13MediaPlaybackStatus\x12\x0b\n\x07Stopped\x10\x00\x12\x0b\n\x07Playing\x10\x01\x12\n\n\x06Paused\x10\x02*k\n\x0cStwHeatLevel\x12\x18\n\x14StwHeatLevel_Unknown\x10\x00\x12\x14\n\x10StwHeatLevel_Off\x10\x01\x12\x14\n\x10StwHeatLevel_Low\x10\x02\x12\x15\n\x11StwHeatLevel_High\x10\x03\x42n\n$com.tesla.generated.carserver.commonZFgithub.com/teslamotors/vehicle-command/pkg/protocol/protobuf/carserverb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,24 +32,24 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'tesla_common_pb2', _globals
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n$com.tesla.generated.carserver.commonZFgithub.com/teslamotors/vehicle-command/pkg/protocol/protobuf/carserver'
-  _globals['_INVALID']._serialized_start=873
-  _globals['_INVALID']._serialized_end=895
-  _globals['_MEDIAPLAYBACKSTATUS']._serialized_start=897
-  _globals['_MEDIAPLAYBACKSTATUS']._serialized_end=956
-  _globals['_STWHEATLEVEL']._serialized_start=958
-  _globals['_STWHEATLEVEL']._serialized_end=1065
-  _globals['_VOID']._serialized_start=33
-  _globals['_VOID']._serialized_end=39
-  _globals['_LATLONG']._serialized_start=41
-  _globals['_LATLONG']._serialized_end=87
-  _globals['_CHARGEPORTLATCHSTATE']._serialized_start=90
-  _globals['_CHARGEPORTLATCHSTATE']._serialized_end=264
-  _globals['_PRECONDITIONINGTIMES']._serialized_start=266
-  _globals['_PRECONDITIONINGTIMES']._serialized_end=371
-  _globals['_OFFPEAKCHARGINGTIMES']._serialized_start=373
-  _globals['_OFFPEAKCHARGINGTIMES']._serialized_end=478
-  _globals['_CHARGESCHEDULE']._serialized_start=481
-  _globals['_CHARGESCHEDULE']._serialized_end=699
-  _globals['_PRECONDITIONSCHEDULE']._serialized_start=702
-  _globals['_PRECONDITIONSCHEDULE']._serialized_end=871
+  _globals['_INVALID']._serialized_start=972
+  _globals['_INVALID']._serialized_end=994
+  _globals['_MEDIAPLAYBACKSTATUS']._serialized_start=996
+  _globals['_MEDIAPLAYBACKSTATUS']._serialized_end=1055
+  _globals['_STWHEATLEVEL']._serialized_start=1057
+  _globals['_STWHEATLEVEL']._serialized_end=1164
+  _globals['_VOID']._serialized_start=44
+  _globals['_VOID']._serialized_end=50
+  _globals['_LATLONG']._serialized_start=52
+  _globals['_LATLONG']._serialized_end=98
+  _globals['_CHARGEPORTLATCHSTATE']._serialized_start=101
+  _globals['_CHARGEPORTLATCHSTATE']._serialized_end=319
+  _globals['_PRECONDITIONINGTIMES']._serialized_start=321
+  _globals['_PRECONDITIONINGTIMES']._serialized_end=448
+  _globals['_OFFPEAKCHARGINGTIMES']._serialized_start=450
+  _globals['_OFFPEAKCHARGINGTIMES']._serialized_end=577
+  _globals['_CHARGESCHEDULE']._serialized_start=580
+  _globals['_CHARGESCHEDULE']._serialized_end=798
+  _globals['_PRECONDITIONSCHEDULE']._serialized_start=801
+  _globals['_PRECONDITIONSCHEDULE']._serialized_end=970
 # @@protoc_insertion_point(module_scope)

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package UniversalMessage;
+package TeslaProto.UniversalMessage;
 
 option go_package = "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/universalmessage";
 option java_package = "com.tesla.generated.universalmessage";
@@ -91,7 +91,7 @@ message RoutableMessage {
     }
 
     oneof sub_sigData {
-        Signatures.SignatureData signature_data = 13;
+        TeslaProto.Signatures.SignatureData signature_data = 13;
     }
 
     MessageStatus signedMessageStatus = 12;

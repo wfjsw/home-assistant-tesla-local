@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package CarServer;
+package TeslaProto.CarServer;
 
 option go_package = "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/carserver";
 option java_package = "com.tesla.generated.carserver.common";

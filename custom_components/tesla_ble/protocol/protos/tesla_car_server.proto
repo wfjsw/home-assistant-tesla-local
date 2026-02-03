@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package CarServer;
+package TeslaProto.CarServer;
 
 option java_package = "com.tesla.generated.carserver.server";
 option go_package = "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/carserver";
@@ -141,7 +141,7 @@ message Response {
     ActionStatus actionStatus = 1;
     oneof response_msg {
         VehicleData vehicleData = 2;
-        Signatures.SessionInfo getSessionInfoResponse = 3;
+        TeslaProto.Signatures.SessionInfo getSessionInfoResponse = 3;
         NearbyChargingSites getNearbyChargingSites = 5;
         Ping ping = 9;
     }

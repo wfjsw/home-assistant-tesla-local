@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10tesla_keys.proto\x12\x04Keys*\x9a\x01\n\x04Role\x12\r\n\tROLE_NONE\x10\x00\x12\x10\n\x0cROLE_SERVICE\x10\x01\x12\x0e\n\nROLE_OWNER\x10\x02\x12\x0f\n\x0bROLE_DRIVER\x10\x03\x12\x0b\n\x07ROLE_FM\x10\x04\x12\x18\n\x14ROLE_VEHICLE_MONITOR\x10\x05\x12\x19\n\x15ROLE_CHARGING_MANAGER\x10\x06\x12\x0e\n\nROLE_GUEST\x10\x08\x42]\n\x18\x63om.tesla.generated.keysZAgithub.com/teslamotors/vehicle-command/pkg/protocol/protobuf/keysb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10tesla_keys.proto\x12\x0fTeslaProto.Keys*\x9a\x01\n\x04Role\x12\r\n\tROLE_NONE\x10\x00\x12\x10\n\x0cROLE_SERVICE\x10\x01\x12\x0e\n\nROLE_OWNER\x10\x02\x12\x0f\n\x0bROLE_DRIVER\x10\x03\x12\x0b\n\x07ROLE_FM\x10\x04\x12\x18\n\x14ROLE_VEHICLE_MONITOR\x10\x05\x12\x19\n\x15ROLE_CHARGING_MANAGER\x10\x06\x12\x0e\n\nROLE_GUEST\x10\x08\x42]\n\x18\x63om.tesla.generated.keysZAgithub.com/teslamotors/vehicle-command/pkg/protocol/protobuf/keysb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,6 +32,6 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'tesla_keys_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\030com.tesla.generated.keysZAgithub.com/teslamotors/vehicle-command/pkg/protocol/protobuf/keys'
-  _globals['_ROLE']._serialized_start=27
-  _globals['_ROLE']._serialized_end=181
+  _globals['_ROLE']._serialized_start=38
+  _globals['_ROLE']._serialized_end=192
 # @@protoc_insertion_point(module_scope)
