@@ -332,14 +332,11 @@ class KeyMetadata:
     """Key metadata for registration."""
 
     key_form_factor: KeyFormFactor = KeyFormFactor.CLOUD_KEY
-    key_name: str = ""
 
     def to_proto(self) -> tesla_vcsec_pb2.KeyMetadata:
         """Convert to protobuf message."""
         msg = tesla_vcsec_pb2.KeyMetadata()
         msg.keyFormFactor = self.key_form_factor
-        if self.key_name:
-            msg.keyName = self.key_name
         return msg
 
 

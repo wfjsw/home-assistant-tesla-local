@@ -19,6 +19,7 @@ from ..const import (
     MAX_MESSAGE_SIZE,
     RX_TIMEOUT,
     CONNECTION_TIMEOUT,
+    KeyFormFactor,
     Domain,
     GenericError,
     OperationStatus,
@@ -513,15 +514,11 @@ class TeslaBLEVehicle:
 
     async def add_key_to_whitelist(
         self,
-        key_name: str = "Home Assistant",
     ) -> bool:
         """Add our public key to the vehicle's whitelist.
 
         This requires the user to tap their key card on the center console
         within 30 seconds of sending the command.
-
-        Args:
-            key_name: Name to identify this key in the vehicle.
 
         Returns:
             True if the key was added successfully.
@@ -531,7 +528,7 @@ class TeslaBLEVehicle:
         whitelist_op = WhitelistOperation(
             public_key_to_add=self._crypto.public_key_bytes,
             metadata_for_key=KeyMetadata(
-                key_name=key_name,
+                key_form_factor=KeyFormFactor.CLOUD_KEY,
             ),
         )
 

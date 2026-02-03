@@ -20,7 +20,6 @@ from .const import (
     CONF_VIN,
     CONF_PRIVATE_KEY,
     CONF_PUBLIC_KEY,
-    CONF_KEY_NAME,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
@@ -304,7 +303,6 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            key_name = user_input.get(CONF_KEY_NAME, "Home Assistant")
             vin = user_input.get(CONF_VIN, "").strip().upper()
 
             if not vin or len(vin) != 17:
@@ -330,9 +328,7 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if await vehicle.connect():
                         try:
                             # Show progress - user needs to tap key card
-                            return await self.async_step_tap_key_card(
-                                key_name=key_name
-                            )
+                            return await self.async_step_tap_key_card()
                         finally:
                             await vehicle.disconnect()
                     else:
@@ -347,7 +343,6 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_VIN): str,
-                    vol.Optional(CONF_KEY_NAME, default="Home Assistant"): str,
                 }
             ),
             description_placeholders={
@@ -359,7 +354,6 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_tap_key_card(
         self,
         user_input: dict[str, Any] | None = None,
-        key_name: str = "Home Assistant",
     ) -> FlowResult:
         """Wait for user to tap key card."""
         errors: dict[str, str] = {}
@@ -382,7 +376,7 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if await vehicle.connect():
                     try:
                         # Try to add key to whitelist
-                        success = await vehicle.add_key_to_whitelist(key_name)
+                        success = await vehicle.add_key_to_whitelist()
 
                         if success:
                             # Key added successfully, create entry
@@ -393,7 +387,6 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                     CONF_VIN: self._vin,
                                     CONF_PRIVATE_KEY: self._private_key.hex(),
                                     CONF_PUBLIC_KEY: self._public_key.hex(),
-                                    CONF_KEY_NAME: key_name,
                                     CONF_NAME: self._name,
                                 },
                             )
@@ -413,9 +406,7 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="tap_key_card",
             data_schema=vol.Schema({}),
-            description_placeholders={
-                "key_name": key_name,
-            },
+            description_placeholders={},
             errors=errors,
         )
 
@@ -457,9 +448,6 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                         CONF_VIN: self._vin,
                                         CONF_PRIVATE_KEY: self._private_key.hex(),
                                         CONF_PUBLIC_KEY: self._public_key.hex(),
-                                        CONF_KEY_NAME: user_input.get(
-                                            CONF_KEY_NAME, "Home Assistant"
-                                        ),
                                         CONF_NAME: self._name,
                                     },
                                 )
@@ -479,7 +467,6 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_VIN): str,
-                    vol.Optional(CONF_KEY_NAME, default="Home Assistant"): str,
                 }
             ),
             errors=errors,
