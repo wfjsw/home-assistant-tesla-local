@@ -42,6 +42,7 @@ from .messages import (
     KeyMetadata,
     ToVCSECMessage,
 )
+from .protos_py import tesla_car_server_pb2 as carserver
 
 if TYPE_CHECKING:
     from bleak.backends.device import BLEDevice
@@ -374,17 +375,18 @@ class TeslaBLEVehicle:
             request_uuid=os.urandom(16),
         )
 
-    async def _send_vcsec_command(
+    async def _get_vcsec_result(
         self,
-        vcsec_message: VCSECMessage,
+        payload: bytes,
         require_session: bool = True,
     ) -> VCSECResponse | None:
-        """Send a VCSEC command and return the response."""
+        """Send a VCSEC command with retry logic and return the response.
+        
+        This matches the getVCSECResult pattern from the reference implementation.
+        """
         if require_session and not self.has_session:
             if not await self.establish_session():
                 raise ConnectionError("Failed to establish session")
-
-        payload = vcsec_message.encode()
 
         if require_session:
             message = self._create_signed_message(payload, Domain.VEHICLE_SECURITY)
@@ -402,6 +404,114 @@ class TeslaBLEVehicle:
         if response and response.payload:
             return VCSECResponse.decode(response.payload)
         return None
+    
+    async def _send_vcsec_command(
+        self,
+        vcsec_message: VCSECMessage,
+        require_session: bool = True,
+    ) -> VCSECResponse | None:
+        """Send a VCSEC command and return the response."""
+        payload = vcsec_message.encode()
+        return await self._get_vcsec_result(payload, require_session)
+
+    async def _execute_rke_action(self, action: RKEAction) -> bool:
+        """Execute an RKE (Remote Keyless Entry) action.
+        
+        This matches the executeRKEAction pattern from the reference implementation.
+        RKE actions typically don't return a command status, just wait for vehicle
+        to acknowledge.
+        """
+        _LOGGER.debug("Executing RKE action: %s", action.name)
+        vcsec = VCSECMessage(rke_action=RKEActionMessage(action=action))
+        response = await self._send_vcsec_command(vcsec)
+        
+        # For RKE actions, we wait until we receive any response (command status or nothing)
+        # The reference implementation checks if command_status is None to determine completion
+        if response and response.command_status is None:
+            return True
+        
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("RKE action %s failed: %s", action.name, error_msg)
+        return success
+
+    async def _execute_closure_action(
+        self, action: ClosureMoveType, closure_field: str
+    ) -> bool:
+        """Execute a closure move action (trunk, frunk, charge port, etc).
+        
+        This matches the executeClosureAction pattern from the reference implementation.
+        
+        Args:
+            action: The move type (MOVE, OPEN, CLOSE, STOP)
+            closure_field: The field name (e.g., 'rear_trunk', 'front_trunk', 'charge_port')
+        """
+        _LOGGER.debug("Executing closure action: %s on %s", action.name, closure_field)
+        
+        # Build the closure request with the appropriate field set
+        closure_kwargs = {closure_field: action}
+        vcsec = VCSECMessage(
+            closure_move_request=ClosureMoveRequest(**closure_kwargs)
+        )
+        
+        response = await self._send_vcsec_command(vcsec)
+        
+        # Wait for any response (similar to RKE)
+        if response and response.command_status is None:
+            return True
+        
+        success, error_msg = self._check_response_error(response)
+        if not success:
+            _LOGGER.warning("Closure action %s on %s failed: %s", action.name, closure_field, error_msg)
+        return success
+
+    async def _execute_carserver_action(
+        self, vehicle_action: "carserver.VehicleAction"
+    ) -> "carserver.Response | None":
+        """Execute a carserver (infotainment) command.
+        
+        This matches the executeCarServerAction pattern from the reference implementation.
+        
+        Args:
+            vehicle_action: The VehicleAction protobuf message
+            
+        Returns:
+            The Response protobuf message or None
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver protobuf not available")
+            return None
+            
+        if not self.has_session:
+            if not await self.establish_session():
+                raise ConnectionError("Failed to establish session")
+
+        # Wrap VehicleAction in Action
+        action = carserver.Action()
+        action.vehicleAction.CopyFrom(vehicle_action)
+        
+        payload = action.SerializeToString()
+        
+        # Create signed message for infotainment domain
+        message = self._create_signed_message(payload, Domain.INFOTAINMENT)
+        
+        response = await self._send_and_receive(message)
+        if not response or not response.payload:
+            return None
+            
+        # Parse response
+        car_response = carserver.Response()
+        car_response.ParseFromString(response.payload)
+        
+        # Check for errors
+        if car_response.HasField("actionStatus"):
+            status = car_response.actionStatus
+            if status.result == carserver.OperationStatus_E.E_OPERATIONSTATUS_ERROR:
+                error_msg = status.result_reason.plain_text if status.HasField("result_reason") else "unspecified error"
+                _LOGGER.error("Carserver command failed: %s", error_msg)
+                return None
+                
+        return car_response
 
     def _check_response_error(self, response: VCSECResponse | None) -> tuple[bool, str | None]:
         """Check response for errors.
@@ -442,99 +552,412 @@ class TeslaBLEVehicle:
     async def wake(self) -> bool:
         """Wake up the vehicle."""
         _LOGGER.info("Waking vehicle")
-        vcsec = VCSECMessage(rke_action=RKEActionMessage(action=RKEAction.WAKE_VEHICLE))
-        response = await self._send_vcsec_command(vcsec)
-
-        success, error_msg = self._check_response_error(response)
-        if not success:
-            _LOGGER.warning("Wake failed: %s", error_msg)
-        return success
+        return await self._execute_rke_action(RKEAction.WAKE_VEHICLE)
 
     async def lock(self) -> bool:
         """Lock the vehicle."""
         _LOGGER.info("Locking vehicle")
-        vcsec = VCSECMessage(rke_action=RKEActionMessage(action=RKEAction.LOCK))
-        response = await self._send_vcsec_command(vcsec)
-
-        success, error_msg = self._check_response_error(response)
-        if not success:
-            _LOGGER.warning("Lock failed: %s", error_msg)
-        elif success:
+        success = await self._execute_rke_action(RKEAction.LOCK)
+        if success:
             self._state.lock_state = VehicleLockState.LOCKED
         return success
 
     async def unlock(self) -> bool:
         """Unlock the vehicle."""
         _LOGGER.info("Unlocking vehicle")
-        vcsec = VCSECMessage(rke_action=RKEActionMessage(action=RKEAction.UNLOCK))
-        response = await self._send_vcsec_command(vcsec)
-
-        success, error_msg = self._check_response_error(response)
-        if not success:
-            _LOGGER.warning("Unlock failed: %s", error_msg)
-        elif success:
+        success = await self._execute_rke_action(RKEAction.UNLOCK)
+        if success:
             self._state.lock_state = VehicleLockState.UNLOCKED
         return success
+
+    async def remote_drive(self) -> bool:
+        """Enable remote drive mode."""
+        _LOGGER.info("Enabling remote drive")
+        return await self._execute_rke_action(RKEAction.REMOTE_DRIVE)
+
+    async def auto_secure_vehicle(self) -> bool:
+        """Auto-secure the vehicle."""
+        _LOGGER.info("Auto-securing vehicle")
+        return await self._execute_rke_action(RKEAction.AUTO_SECURE_VEHICLE)
+
+    async def actuate_trunk(self) -> bool:
+        """Actuate (toggle) the rear trunk."""
+        _LOGGER.info("Actuating trunk")
+        return await self._execute_closure_action(ClosureMoveType.MOVE, "rear_trunk")
 
     async def open_trunk(self) -> bool:
         """Open the rear trunk."""
         _LOGGER.info("Opening trunk")
-        vcsec = VCSECMessage(
-            closure_move_request=ClosureMoveRequest(
-                rear_trunk=ClosureMoveType.OPEN,
-            )
-        )
-        response = await self._send_vcsec_command(vcsec)
+        return await self._execute_closure_action(ClosureMoveType.MOVE, "rear_trunk")
 
-        success, error_msg = self._check_response_error(response)
-        if not success:
-            _LOGGER.warning("Open trunk failed: %s", error_msg)
-        return success
+    async def close_trunk(self) -> bool:
+        """Close the rear trunk (not available on all vehicle types)."""
+        _LOGGER.info("Closing trunk")
+        return await self._execute_closure_action(ClosureMoveType.CLOSE, "rear_trunk")
 
     async def open_frunk(self) -> bool:
         """Open the front trunk (frunk)."""
         _LOGGER.info("Opening frunk")
-        vcsec = VCSECMessage(
-            closure_move_request=ClosureMoveRequest(
-                front_trunk=ClosureMoveType.OPEN,
-            )
-        )
-        response = await self._send_vcsec_command(vcsec)
-
-        success, error_msg = self._check_response_error(response)
-        if not success:
-            _LOGGER.warning("Open frunk failed: %s", error_msg)
-        return success
+        return await self._execute_closure_action(ClosureMoveType.MOVE, "front_trunk")
 
     async def open_charge_port(self) -> bool:
         """Open the charge port."""
         _LOGGER.info("Opening charge port")
-        vcsec = VCSECMessage(
-            closure_move_request=ClosureMoveRequest(
-                charge_port=ClosureMoveType.OPEN,
-            )
-        )
-        response = await self._send_vcsec_command(vcsec)
-
-        success, error_msg = self._check_response_error(response)
-        if not success:
-            _LOGGER.warning("Open charge port failed: %s", error_msg)
-        return success
+        return await self._execute_closure_action(ClosureMoveType.OPEN, "charge_port")
 
     async def close_charge_port(self) -> bool:
         """Close the charge port."""
         _LOGGER.info("Closing charge port")
-        vcsec = VCSECMessage(
-            closure_move_request=ClosureMoveRequest(
-                charge_port=ClosureMoveType.CLOSE,
-            )
-        )
-        response = await self._send_vcsec_command(vcsec)
+        return await self._execute_closure_action(ClosureMoveType.CLOSE, "charge_port")
 
-        success, error_msg = self._check_response_error(response)
-        if not success:
-            _LOGGER.warning("Close charge port failed: %s", error_msg)
-        return success
+    async def open_tonneau(self) -> bool:
+        """Open the tonneau (Cybertruck bed cover)."""
+        _LOGGER.info("Opening tonneau")
+        return await self._execute_closure_action(ClosureMoveType.OPEN, "tonneau")
+
+    async def close_tonneau(self) -> bool:
+        """Close the tonneau (Cybertruck bed cover)."""
+        _LOGGER.info("Closing tonneau")
+        return await self._execute_closure_action(ClosureMoveType.CLOSE, "tonneau")
+
+    async def stop_tonneau(self) -> bool:
+        """Stop the tonneau (Cybertruck bed cover)."""
+        _LOGGER.info("Stopping tonneau")
+        return await self._execute_closure_action(ClosureMoveType.STOP, "tonneau")
+
+    async def honk_horn(self) -> bool:
+        """Honk the horn."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Honking horn")
+        vehicle_action = carserver.VehicleAction()
+        vehicle_action.vehicleControlHonkHornAction.CopyFrom(
+            carserver.VehicleControlHonkHornAction()
+        )
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def flash_lights(self) -> bool:
+        """Flash the lights."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Flashing lights")
+        vehicle_action = carserver.VehicleAction()
+        vehicle_action.vehicleControlFlashLightsAction.CopyFrom(
+            carserver.VehicleControlFlashLightsAction()
+        )
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def vent_windows(self) -> bool:
+        """Vent all windows."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Venting windows")
+        vehicle_action = carserver.VehicleAction()
+        window_action = carserver.VehicleControlWindowAction()
+        window_action.vent.CopyFrom(carserver.Void())
+        vehicle_action.vehicleControlWindowAction.CopyFrom(window_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def close_windows(self) -> bool:
+        """Close all windows."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Closing windows")
+        vehicle_action = carserver.VehicleAction()
+        window_action = carserver.VehicleControlWindowAction()
+        window_action.close.CopyFrom(carserver.Void())
+        vehicle_action.vehicleControlWindowAction.CopyFrom(window_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def ping(self) -> bool:
+        """Ping the vehicle (authenticated no-op)."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.debug("Pinging vehicle")
+        vehicle_action = carserver.VehicleAction()
+        ping_msg = carserver.Ping()
+        ping_msg.pingId = 1
+        vehicle_action.ping.CopyFrom(ping_msg)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    # Climate control commands
+
+    async def climate_on(self) -> bool:
+        """Turn on climate control."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Turning on climate")
+        vehicle_action = carserver.VehicleAction()
+        hvac_action = carserver.HvacAutoAction()
+        hvac_action.powerOn = True
+        vehicle_action.hvacAutoAction.CopyFrom(hvac_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def climate_off(self) -> bool:
+        """Turn off climate control."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Turning off climate")
+        vehicle_action = carserver.VehicleAction()
+        hvac_action = carserver.HvacAutoAction()
+        hvac_action.powerOn = False
+        vehicle_action.hvacAutoAction.CopyFrom(hvac_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def set_temperature(self, driver_temp_celsius: float, passenger_temp_celsius: float | None = None) -> bool:
+        """Set cabin temperature.
+        
+        Args:
+            driver_temp_celsius: Driver side temperature in Celsius
+            passenger_temp_celsius: Passenger side temperature in Celsius (optional, defaults to driver temp)
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        if passenger_temp_celsius is None:
+            passenger_temp_celsius = driver_temp_celsius
+            
+        _LOGGER.info("Setting temperature: driver=%.1f°C, passenger=%.1f°C", 
+                     driver_temp_celsius, passenger_temp_celsius)
+        vehicle_action = carserver.VehicleAction()
+        temp_action = carserver.HvacTemperatureAdjustmentAction()
+        temp_action.driverTempCelsius = driver_temp_celsius
+        temp_action.passengerTempCelsius = passenger_temp_celsius
+        vehicle_action.hvacTemperatureAdjustmentAction.CopyFrom(temp_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def set_seat_heater(self, seat_position: str, level: int) -> bool:
+        """Set seat heater level.
+        
+        Args:
+            seat_position: Seat position ('front_left', 'front_right', etc.)
+            level: Heating level (0=off, 1=low, 2=medium, 3=high)
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Setting seat heater: %s to level %d", seat_position, level)
+        # This is a simplified implementation - full implementation would need proper seat mapping
+        vehicle_action = carserver.VehicleAction()
+        # TODO: Implement full seat heater mapping from reference
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def set_steering_wheel_heater(self, enabled: bool) -> bool:
+        """Turn steering wheel heater on or off."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Setting steering wheel heater: %s", "on" if enabled else "off")
+        vehicle_action = carserver.VehicleAction()
+        heater_action = carserver.HvacSteeringWheelHeaterAction()
+        heater_action.powerOn = enabled
+        vehicle_action.hvacSteeringWheelHeaterAction.CopyFrom(heater_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    # Charging commands
+
+    async def charge_start(self) -> bool:
+        """Start charging."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Starting charge")
+        vehicle_action = carserver.VehicleAction()
+        charge_action = carserver.ChargingStartStopAction()
+        charge_action.start.CopyFrom(carserver.Void())
+        vehicle_action.chargingStartStopAction.CopyFrom(charge_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def charge_stop(self) -> bool:
+        """Stop charging."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Stopping charge")
+        vehicle_action = carserver.VehicleAction()
+        charge_action = carserver.ChargingStartStopAction()
+        charge_action.stop.CopyFrom(carserver.Void())
+        vehicle_action.chargingStartStopAction.CopyFrom(charge_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def set_charge_limit(self, percent: int) -> bool:
+        """Set charge limit percentage.
+        
+        Args:
+            percent: Charge limit (50-100)
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        if not 50 <= percent <= 100:
+            _LOGGER.error("Charge limit must be between 50 and 100")
+            return False
+            
+        _LOGGER.info("Setting charge limit to %d%%", percent)
+        vehicle_action = carserver.VehicleAction()
+        limit_action = carserver.ChargingSetLimitAction()
+        limit_action.percent = percent
+        vehicle_action.chargingSetLimitAction.CopyFrom(limit_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def set_charging_amps(self, amps: int) -> bool:
+        """Set charging current in amps.
+        
+        Args:
+            amps: Charging current in amps
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Setting charging amps to %d", amps)
+        vehicle_action = carserver.VehicleAction()
+        amps_action = carserver.SetChargingAmpsAction()
+        amps_action.chargingAmps = amps
+        vehicle_action.setChargingAmpsAction.CopyFrom(amps_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    # Security commands
+
+    async def set_sentry_mode(self, enabled: bool) -> bool:
+        """Enable or disable sentry mode.
+        
+        Args:
+            enabled: True to enable, False to disable
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Setting sentry mode: %s", "on" if enabled else "off")
+        vehicle_action = carserver.VehicleAction()
+        sentry_action = carserver.VehicleControlSetSentryModeAction()
+        sentry_action.on = enabled
+        vehicle_action.vehicleControlSetSentryModeAction.CopyFrom(sentry_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    # Media commands
+
+    async def media_next_track(self) -> bool:
+        """Skip to next media track."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Next track")
+        vehicle_action = carserver.VehicleAction()
+        vehicle_action.mediaNextTrack.CopyFrom(carserver.MediaNextTrack())
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def media_previous_track(self) -> bool:
+        """Skip to previous media track."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Previous track")
+        vehicle_action = carserver.VehicleAction()
+        vehicle_action.mediaPreviousTrack.CopyFrom(carserver.MediaPreviousTrack())
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def media_toggle_playback(self) -> bool:
+        """Toggle media playback (play/pause)."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Toggle playback")
+        vehicle_action = carserver.VehicleAction()
+        vehicle_action.mediaPlayAction.CopyFrom(carserver.MediaPlayAction())
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def media_volume_up(self) -> bool:
+        """Increase media volume."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Volume up")
+        vehicle_action = carserver.VehicleAction()
+        volume_action = carserver.MediaUpdateVolume()
+        volume_action.volumeDelta = 1
+        vehicle_action.mediaUpdateVolume.CopyFrom(volume_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def media_volume_down(self) -> bool:
+        """Decrease media volume."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        _LOGGER.info("Volume down")
+        vehicle_action = carserver.VehicleAction()
+        volume_action = carserver.MediaUpdateVolume()
+        volume_action.volumeDelta = -1
+        vehicle_action.mediaUpdateVolume.CopyFrom(volume_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def set_volume(self, volume: float) -> bool:
+        """Set media volume.
+        
+        Args:
+            volume: Volume level (0.0 to 10.0)
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+            
+        if not 0.0 <= volume <= 10.0:
+            _LOGGER.error("Volume must be between 0.0 and 10.0")
+            return False
+            
+        _LOGGER.info("Setting volume to %.1f", volume)
+        vehicle_action = carserver.VehicleAction()
+        volume_action = carserver.MediaUpdateVolume()
+        volume_action.volumeAbsoluteFloat = volume
+        vehicle_action.mediaUpdateVolume.CopyFrom(volume_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
 
     async def get_vehicle_status(self) -> VehicleState:
         """Get current vehicle status."""
