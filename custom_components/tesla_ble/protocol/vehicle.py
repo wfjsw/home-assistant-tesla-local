@@ -14,11 +14,7 @@ from bleak_retry_connector import establish_connection
 
 from ..const import (
     TESLA_RX_CHAR_UUID,
-    TESLA_SERVICE_UUID,
     TESLA_TX_CHAR_UUID,
-    MAX_MESSAGE_SIZE,
-    RX_TIMEOUT,
-    CONNECTION_TIMEOUT,
     KeyFormFactor,
     Domain,
     GenericError,
@@ -93,8 +89,9 @@ class TeslaBLEVehicle:
         self._client: BleakClient | None = None
         self._state = VehicleState()
         self._rx_buffer: bytearray = bytearray()
-        self._rx_event: asyncio.Event = asyncio.Event()
-        self._message_queue: asyncio.Queue[bytes] = asyncio.Queue()
+        self._expected_length: int = 0
+        self._pending_requests: dict[bytes, asyncio.Future[bytes]] = {}
+        self._unsolicited_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._lock = asyncio.Lock()
         self._disconnect_callbacks: list[Callable[[], None]] = []
 
@@ -153,11 +150,34 @@ class TeslaBLEVehicle:
                 self._rx_buffer = bytearray(
                     self._rx_buffer[self._expected_length :]
                 )
+                self._dispatch_message(message)
+
+    def _dispatch_message(self, message: bytes) -> None:
+        """Route incoming message to the appropriate handler."""
+        try:
+            response = RoutableMessage.decode(message)
+            request_uuid = response.request_uuid
+
+            if request_uuid and request_uuid in self._pending_requests:
+                # Deliver to waiting caller
+                future = self._pending_requests[request_uuid]
+                if not future.done():
+                    future.set_result(message)
+                else:
+                    _LOGGER.debug("Future already done for UUID: %s", request_uuid.hex())
+            else:
+                # Unsolicited message - queue for other processing
+                _LOGGER.debug(
+                    "Received unsolicited message (UUID: %s): %s",
+                    request_uuid.hex() if request_uuid else "none",
+                    response,
+                )
                 try:
-                    self._message_queue.put_nowait(message)
+                    self._unsolicited_queue.put_nowait(message)
                 except asyncio.QueueFull:
-                    _LOGGER.warning("Message queue full, dropping message")
-                self._rx_event.set()
+                    _LOGGER.warning("Unsolicited message queue full, dropping message")
+        except Exception as ex:
+            _LOGGER.warning("Failed to dispatch message: %s", ex)
 
     async def connect(self) -> bool:
         """Connect to the vehicle."""
@@ -216,29 +236,35 @@ class TeslaBLEVehicle:
             chunk = framed[i : i + mtu]
             await self._client.write_gatt_char(TESLA_TX_CHAR_UUID, chunk)
 
-    async def _receive_message(self, timeout: float = RX_TIMEOUT) -> bytes | None:
-        """Receive a message from the vehicle."""
-        try:
-            self._rx_event.clear()
-            await asyncio.wait_for(self._rx_event.wait(), timeout)
-            return await self._message_queue.get()
-        except asyncio.TimeoutError:
-            return None
-
     async def _send_and_receive(
         self,
         message: RoutableMessage,
         timeout: float = 5.0,
     ) -> RoutableMessage | None:
-        """Send a message and wait for response."""
-        encoded = message.encode()
-        await self._send_message(encoded)
+        """Send a message and wait for correlated response."""
+        request_uuid = message.request_uuid
+        if not request_uuid:
+            _LOGGER.warning("Message has no request_uuid, cannot correlate response")
+            return None
 
-        # Wait for response
-        response_data = await self._receive_message(timeout)
-        if response_data:
+        # Create a future to wait for the response
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future[bytes] = loop.create_future()
+        self._pending_requests[request_uuid] = future
+
+        try:
+            encoded = message.encode()
+            await self._send_message(encoded)
+
+            # Wait for correlated response
+            response_data = await asyncio.wait_for(future, timeout)
             return RoutableMessage.decode(response_data)
-        return None
+        except asyncio.TimeoutError:
+            _LOGGER.debug("Timeout waiting for response to UUID: %s", request_uuid.hex())
+            return None
+        finally:
+            # Clean up the pending request
+            self._pending_requests.pop(request_uuid, None)
 
     async def establish_session(self) -> bool:
         """Establish a secure session with the vehicle."""
