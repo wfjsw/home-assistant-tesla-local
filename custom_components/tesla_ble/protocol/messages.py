@@ -12,6 +12,7 @@ from ..const import (
     GenericError,
     InformationRequestType,
     KeyFormFactor,
+    KeyRole,
     OperationStatus,
     RKEAction,
 )
@@ -346,29 +347,31 @@ class WhitelistOperation:
 
     public_key_to_add: bytes | None = None
     public_key_to_remove: bytes | None = None
+    key_role: KeyRole = KeyRole.OWNER
     metadata_for_key: KeyMetadata | None = None
 
     def encode(self) -> bytes:
         """Encode to protobuf bytes."""
         msg = tesla_vcsec_pb2.WhitelistOperation()
-        
+
         if self.public_key_to_add:
             public_key = tesla_vcsec_pb2.PublicKey()
             public_key.PublicKeyRaw = self.public_key_to_add
-            
-            # Create permission change with key
+
+            # Create permission change with key and role
             perm = tesla_vcsec_pb2.PermissionChange()
             perm.key.CopyFrom(public_key)
+            perm.keyRole = self.key_role
             msg.addKeyToWhitelistAndAddPermissions.CopyFrom(perm)
-            
+
         if self.public_key_to_remove:
             public_key = tesla_vcsec_pb2.PublicKey()
             public_key.PublicKeyRaw = self.public_key_to_remove
             msg.removePublicKeyFromWhitelist.CopyFrom(public_key)
-            
+
         if self.metadata_for_key:
             msg.metadataForKey.CopyFrom(self.metadata_for_key.to_proto())
-            
+
         return msg.SerializeToString()
 
 

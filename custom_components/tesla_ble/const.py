@@ -107,6 +107,19 @@ class KeyFormFactor(IntEnum):
     CLOUD_KEY = 9
 
 
+class KeyRole(IntEnum):
+    """Key role types."""
+
+    NONE = 0
+    SERVICE = 1
+    OWNER = 2
+    DRIVER = 3
+    FM = 4
+    VEHICLE_MONITOR = 5
+    CHARGING_MANAGER = 6
+    GUEST = 8
+
+
 class ClosureState(IntEnum):
     """Closure state values."""
 
