@@ -9,10 +9,9 @@ import struct
 import time
 from typing import TYPE_CHECKING
 
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ec import (
@@ -25,10 +24,6 @@ _LOGGER = logging.getLogger(__name__)
 # AES-GCM constants
 NONCE_LENGTH = 12
 TAG_LENGTH = 16
-
-# HKDF info strings
-HKDF_INFO_REQUEST = b"authenticated command"
-HKDF_INFO_RESPONSE = b"authenticated response"
 
 
 def generate_key_pair() -> tuple[bytes, bytes]:
@@ -72,9 +67,22 @@ def compute_shared_secret(
     private_key: EllipticCurvePrivateKey,
     peer_public_key: EllipticCurvePublicKey,
 ) -> bytes:
-    """Compute ECDH shared secret."""
+    """Compute ECDH shared secret.
+
+    Returns the raw x-coordinate of the shared point (32 bytes).
+    """
     shared_key = private_key.exchange(ec.ECDH(), peer_public_key)
     return shared_key
+
+
+def derive_session_key(shared_secret: bytes) -> bytes:
+    """Derive session key from shared secret using SHA1.
+
+    This matches the reference implementation in vehicle-command:
+    session.key = SHA1(shared_secret)[:16]
+    """
+    digest = hashlib.sha1(shared_secret).digest()
+    return digest[:16]  # First 16 bytes (128 bits)
 
 
 class TeslaCrypto:
@@ -110,29 +118,20 @@ class TeslaCrypto:
         return self._session_key is not None
 
     def set_vehicle_public_key(self, public_key_bytes: bytes) -> None:
-        """Set vehicle's public key and compute shared secret."""
+        """Set vehicle's public key and compute shared secret and session key.
+
+        The session key is derived using SHA1 of the shared secret, matching
+        the reference implementation in vehicle-command/internal/authentication/native.go:
+        session.key = SHA1(shared_secret)[:16]
+        """
         self._vehicle_public_key = load_public_key(public_key_bytes)
         self._shared_secret = compute_shared_secret(
             self._private_key, self._vehicle_public_key
         )
-        _LOGGER.debug("Computed shared secret with vehicle")
-
-    def derive_session_key(
-        self,
-        epoch: bytes,
-        info: bytes = HKDF_INFO_REQUEST,
-    ) -> bytes:
-        """Derive session key using HKDF."""
-        if not self._shared_secret:
-            raise ValueError("No shared secret available")
-
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=16,
-            salt=epoch,
-            info=info,
-        )
-        return hkdf.derive(self._shared_secret)
+        # Derive session key immediately using SHA1 (NOT HKDF!)
+        # This matches the reference: digest := sha1.Sum(sharedSecret); session.key = digest[:16]
+        self._session_key = derive_session_key(self._shared_secret)
+        _LOGGER.debug("Computed shared secret and session key with vehicle")
 
     def initialize_session(
         self,
@@ -140,18 +139,22 @@ class TeslaCrypto:
         time_zero: int,
         counter: int,
     ) -> None:
-        """Initialize session with vehicle's session info."""
+        """Initialize session with vehicle's session info.
+
+        Note: The session key is derived when set_vehicle_public_key is called.
+        This method sets the epoch, counter, and time synchronization info.
+        """
         self._epoch = epoch
         self._time_zero = time_zero
         self._counter = counter
-        self._session_key = self.derive_session_key(epoch)
-        # Calculate clock offset
+        # Calculate clock offset (vehicle time_zero is seconds since epoch start)
         self._clock_offset = int(time.time()) - time_zero
         _LOGGER.debug(
-            "Session initialized: epoch=%s, counter=%d, clock_offset=%d",
+            "Session initialized: epoch=%s, counter=%d, clock_offset=%d, has_key=%s",
             epoch.hex(),
             counter,
             self._clock_offset,
+            self._session_key is not None,
         )
 
     def get_current_timestamp(self) -> int:
@@ -167,18 +170,25 @@ class TeslaCrypto:
         self,
         plaintext: bytes,
         associated_data: bytes | None = None,
+        counter: int | None = None,
     ) -> tuple[bytes, bytes, int]:
         """Encrypt a message using AES-GCM.
 
+        Args:
+            plaintext: The data to encrypt.
+            associated_data: Optional authenticated data.
+            counter: Counter value to use. If None, increments and uses next counter.
+
         Returns:
-            Tuple of (ciphertext, nonce, counter_used)
+            Tuple of (ciphertext_with_tag, nonce, counter_used)
         """
         if not self._session_key:
             raise ValueError("No session key available")
 
-        counter = self.increment_counter()
+        if counter is None:
+            counter = self.increment_counter()
 
-        # Build nonce: 4-byte counter + 8 random bytes
+        # Build nonce: 4-byte counter (little-endian) + 8 random bytes
         counter_bytes = struct.pack("<I", counter)
         random_bytes = os.urandom(8)
         nonce = counter_bytes + random_bytes
@@ -194,13 +204,15 @@ class TeslaCrypto:
         nonce: bytes,
         associated_data: bytes | None = None,
     ) -> bytes:
-        """Decrypt a message using AES-GCM."""
+        """Decrypt a message using AES-GCM.
+
+        Uses the same session key as encryption - the reference implementation
+        uses a single GCM cipher for both directions.
+        """
         if not self._session_key:
             raise ValueError("No session key available")
 
-        # Use response key for decryption
-        response_key = self.derive_session_key(self._epoch, HKDF_INFO_RESPONSE)
-        aesgcm = AESGCM(response_key)
+        aesgcm = AESGCM(self._session_key)
         return aesgcm.decrypt(nonce, ciphertext, associated_data)
 
     def compute_hmac(

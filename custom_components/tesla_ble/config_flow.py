@@ -310,9 +310,9 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._vin = vin
 
-                # Try to pair the key with the vehicle
+                # Try to send add-key request to the vehicle
+                # The vehicle will then prompt the user to tap their NFC card
                 try:
-                    from bleak import BleakClient
                     from .protocol import TeslaBLEVehicle
 
                     assert self._discovery_info is not None
@@ -324,18 +324,28 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vin,
                     )
 
-                    # Connect and try to add key
+                    # Connect and send add key request
                     if await vehicle.connect():
                         try:
-                            # Show progress - user needs to tap key card
-                            return await self.async_step_tap_key_card()
+                            # Send the add-key request FIRST
+                            # This triggers the vehicle to prompt for NFC tap
+                            success = await vehicle.add_key_to_whitelist()
+
+                            if success:
+                                _LOGGER.info(
+                                    "Add-key request sent. Vehicle should now prompt for NFC tap."
+                                )
+                                # Now show the tap key card step for user to confirm
+                                return await self.async_step_tap_key_card()
+                            else:
+                                errors["base"] = "add_key_request_failed"
                         finally:
                             await vehicle.disconnect()
                     else:
                         errors["base"] = "cannot_connect"
 
                 except Exception:
-                    _LOGGER.exception("Failed to pair key")
+                    _LOGGER.exception("Failed to send add-key request")
                     errors["base"] = "pairing_failed"
 
         return self.async_show_form(
@@ -355,11 +365,12 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Wait for user to tap key card."""
+        """Wait for user to tap key card and verify key was added."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             # User confirmed they tapped the key card
+            # Now verify the key was actually added by establishing a session
             try:
                 from .protocol import TeslaBLEVehicle
 
@@ -375,11 +386,11 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 if await vehicle.connect():
                     try:
-                        # Try to add key to whitelist
-                        success = await vehicle.add_key_to_whitelist()
-
-                        if success:
-                            # Key added successfully, create entry
+                        # Try to establish a session - this verifies our key is whitelisted
+                        # If the key wasn't added, session establishment will fail
+                        if await vehicle.establish_session():
+                            _LOGGER.info("Session established - key successfully added to whitelist")
+                            # Key is valid and whitelisted, create entry
                             return self.async_create_entry(
                                 title=f"Tesla {self._vin[-6:]}",
                                 data={
@@ -391,6 +402,8 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 },
                             )
                         else:
+                            # Session failed - key probably wasn't added
+                            _LOGGER.warning("Session establishment failed - key may not have been added")
                             errors["base"] = "key_not_added"
                     finally:
                         await vehicle.disconnect()
@@ -400,8 +413,8 @@ class TeslaBLEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except asyncio.TimeoutError:
                 errors["base"] = "timeout"
             except Exception:
-                _LOGGER.exception("Failed to add key")
-                errors["base"] = "pairing_failed"
+                _LOGGER.exception("Failed to verify key")
+                errors["base"] = "verification_failed"
 
         return self.async_show_form(
             step_id="tap_key_card",

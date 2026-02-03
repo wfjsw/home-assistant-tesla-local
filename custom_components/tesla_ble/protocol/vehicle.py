@@ -90,7 +90,6 @@ class TeslaBLEVehicle:
         self._client: BleakClient | None = None
         self._state = VehicleState()
         self._rx_buffer: bytearray = bytearray()
-        self._expected_length: int = 0
         self._pending_requests: dict[bytes, asyncio.Future[bytes]] = {}
         self._unsolicited_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._lock = asyncio.Lock()
@@ -133,25 +132,58 @@ class TeslaBLEVehicle:
     def _notification_handler(
         self, characteristic: int, data: bytearray
     ) -> None:
-        """Handle incoming notifications from the vehicle."""
+        """Handle incoming notifications from the vehicle.
+
+        Message format: [2-byte big-endian length] + [payload]
+        This matches the framing in vehicle-command/pkg/connector/ble/ble.go
+        """
         _LOGGER.debug("Received notification: %s", data.hex())
 
-        # Check if this is the start of a new message
-        if len(data) >= 2:
-            # First two bytes are the message length (big-endian)
-            if not self._rx_buffer:
-                self._expected_length = struct.unpack(">H", data[:2])[0]
-                self._rx_buffer.extend(data[2:])
-            else:
-                self._rx_buffer.extend(data)
+        # Append incoming data to buffer (matching reference implementation)
+        self._rx_buffer.extend(data)
 
-            # Check if message is complete
-            if len(self._rx_buffer) >= self._expected_length:
-                message = bytes(self._rx_buffer[: self._expected_length])
-                self._rx_buffer = bytearray(
-                    self._rx_buffer[self._expected_length :]
-                )
-                self._dispatch_message(message)
+        # Process all complete messages in the buffer
+        # This loop handles the case where multiple messages arrive together
+        while self._flush_message():
+            pass
+
+    def _flush_message(self) -> bool:
+        """Extract and dispatch a complete message from the buffer.
+
+        Returns True if a message was extracted, False otherwise.
+        This matches the flush() implementation in vehicle-command.
+        """
+        # Need at least 2 bytes for the length prefix
+        if len(self._rx_buffer) < 2:
+            return False
+
+        # Extract message length from first 2 bytes (big-endian)
+        msg_length = struct.unpack(">H", self._rx_buffer[:2])[0]
+
+        # Sanity check - reject oversized messages
+        max_message_size = 1024
+        if msg_length > max_message_size:
+            _LOGGER.warning(
+                "Message length %d exceeds max %d, clearing buffer",
+                msg_length,
+                max_message_size,
+            )
+            self._rx_buffer.clear()
+            return False
+
+        # Check if we have the complete message (length prefix + payload)
+        if len(self._rx_buffer) < 2 + msg_length:
+            return False
+
+        # Extract the message payload (excluding length prefix)
+        message = bytes(self._rx_buffer[2 : 2 + msg_length])
+
+        # Remove processed data from buffer, keeping any remainder
+        self._rx_buffer = bytearray(self._rx_buffer[2 + msg_length :])
+
+        # Dispatch the complete message
+        self._dispatch_message(message)
+        return True
 
     def _dispatch_message(self, message: bytes) -> None:
         """Route incoming message to the appropriate handler."""
@@ -314,11 +346,17 @@ class TeslaBLEVehicle:
         payload: bytes,
         domain: Domain = Domain.VEHICLE_SECURITY,
     ) -> RoutableMessage:
-        """Create a signed routable message."""
+        """Create a signed routable message.
+
+        Encrypts the payload and creates a RoutableMessage with AES-GCM signature data.
+        """
+        # Get signature metadata (this increments counter)
         sig_data = self._crypto.create_signature_data()
 
-        # Encrypt the payload
-        ciphertext, nonce, counter = self._crypto.encrypt_message(payload)
+        # Encrypt the payload using the same counter that was incremented above
+        ciphertext, nonce, counter = self._crypto.encrypt_message(
+            payload, counter=sig_data["counter"]
+        )
 
         signature = SignatureData(
             epoch=sig_data["epoch"],
@@ -541,6 +579,7 @@ class TeslaBLEVehicle:
 
     async def add_key_to_whitelist(
         self,
+        key_form_factor: KeyFormFactor = KeyFormFactor.CLOUD_KEY,
     ) -> bool:
         """Add our public key to the vehicle's whitelist.
 
@@ -551,6 +590,10 @@ class TeslaBLEVehicle:
         Note: This method returns True as soon as the request is transmitted.
         A True return value does NOT guarantee the key was added - the user
         must complete the NFC card tap to authorize the new key.
+
+        Args:
+            key_form_factor: The form factor of the key being added.
+                Defaults to CLOUD_KEY for Home Assistant integrations.
 
         Returns:
             True if the request was sent successfully.
@@ -564,7 +607,7 @@ class TeslaBLEVehicle:
         # Build the whitelist operation with our public key
         whitelist_op = WhitelistOperation(
             public_key_to_add=self._crypto.public_key_bytes,
-            metadata_for_key=KeyMetadata(key_form_factor=KeyFormFactor.NFC_CARD),
+            metadata_for_key=KeyMetadata(key_form_factor=key_form_factor),
         )
 
         # Wrap in UnsignedMessage
@@ -574,18 +617,11 @@ class TeslaBLEVehicle:
         # This indicates authentication will be via physical NFC card tap
         to_vcsec = ToVCSECMessage(unsigned_message=unsigned_msg.encode())
 
-        # Send without requiring existing session (fire-and-forget)
-        message = RoutableMessage(
-            to_destination=Destination(domain=Domain.VEHICLE_SECURITY),
-            from_destination=Destination(
-                routing_address=self._crypto.public_key_bytes
-            ),
-            payload=to_vcsec.encode(),
-            request_uuid=os.urandom(16),
-        )
-
+        # IMPORTANT: For add-key requests, send ToVCSECMessage DIRECTLY without
+        # wrapping in RoutableMessage. This matches the reference implementation
+        # in vehicle-command/pkg/vehicle/security.go SendAddKeyRequestWithRole()
         try:
-            encoded = message.encode()
+            encoded = to_vcsec.encode()
             await self._send_message(encoded)
             _LOGGER.info(
                 "Add-key request sent. User must tap NFC card on center console to confirm."
