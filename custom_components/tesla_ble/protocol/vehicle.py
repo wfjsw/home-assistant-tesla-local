@@ -15,6 +15,7 @@ from bleak_retry_connector import establish_connection
 from ..const import (
     TESLA_RX_CHAR_UUID,
     TESLA_TX_CHAR_UUID,
+    DEFAULT_FLAGS,
     KeyFormFactor,
     Domain,
     GenericError,
@@ -43,6 +44,8 @@ from .messages import (
     ToVCSECMessage,
 )
 from .protos_py import tesla_car_server_pb2 as carserver
+from .protos_py import tesla_common_pb2 as common
+from .protos_py import tesla_vehicle_pb2 as vehicle_pb
 
 if TYPE_CHECKING:
     from bleak.backends.device import BLEDevice
@@ -401,22 +404,28 @@ class TeslaBLEVehicle:
     ) -> RoutableMessage:
         """Create a signed routable message.
 
-        Encrypts the payload and creates a RoutableMessage with AES-GCM signature data.
-        """
-        # Get signature metadata (this increments counter)
-        sig_data = self._crypto.create_signature_data()
+        Encrypts the payload with proper metadata authentication and creates
+        a RoutableMessage with AES-GCM signature data.
 
-        # Encrypt the payload using the same counter that was incremented above
-        ciphertext, nonce, counter = self._crypto.encrypt_message(
-            payload, counter=sig_data["counter"]
+        This follows the reference implementation in vehicle-command which:
+        1. Computes a metadata checksum from signature type, domain, epoch, etc.
+        2. Uses this checksum as the Associated Data (AD) for AES-GCM encryption
+        3. Includes the signer's public key in the signature data
+        """
+        # Encrypt with proper metadata authentication
+        ciphertext, nonce, counter, expires_at = self._crypto.encrypt_with_metadata(
+            plaintext=payload,
+            domain=domain,
+            flags=DEFAULT_FLAGS,
         )
 
         signature = SignatureData(
-            epoch=sig_data["epoch"],
+            epoch=self._crypto._epoch,
             nonce=nonce,
             counter=counter,
-            expires_at=sig_data["expires_at"],
+            expires_at=expires_at,
             tag=ciphertext[-16:],  # AES-GCM tag is last 16 bytes
+            signer_public_key=self._crypto.public_key_bytes,  # Include signer identity
         )
 
         return RoutableMessage(
@@ -425,6 +434,7 @@ class TeslaBLEVehicle:
             payload=ciphertext[:-16],  # Ciphertext without tag
             signature_data=signature,
             request_uuid=os.urandom(16),
+            flags=DEFAULT_FLAGS,  # Request encrypted responses
         )
 
     async def _get_vcsec_result(
@@ -907,19 +917,152 @@ class TeslaBLEVehicle:
 
     async def set_sentry_mode(self, enabled: bool) -> bool:
         """Enable or disable sentry mode.
-        
+
         Args:
             enabled: True to enable, False to disable
         """
         if carserver is None:
             _LOGGER.error("Carserver not available")
             return False
-            
+
         _LOGGER.info("Setting sentry mode: %s", "on" if enabled else "off")
         vehicle_action = carserver.VehicleAction()
         sentry_action = carserver.VehicleControlSetSentryModeAction()
         sentry_action.on = enabled
         vehicle_action.vehicleControlSetSentryModeAction.CopyFrom(sentry_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def enable_valet_mode(self, pin: str) -> bool:
+        """Enable valet mode with PIN.
+
+        Args:
+            pin: A 4-digit PIN code.
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+
+        if len(pin) != 4 or not pin.isdigit():
+            _LOGGER.error("PIN must be exactly 4 digits")
+            return False
+
+        _LOGGER.info("Enabling valet mode")
+        vehicle_action = carserver.VehicleAction()
+        valet_action = carserver.VehicleControlSetValetModeAction()
+        valet_action.on = True
+        valet_action.password = pin
+        vehicle_action.vehicleControlSetValetModeAction.CopyFrom(valet_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def disable_valet_mode(self) -> bool:
+        """Disable valet mode."""
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+
+        _LOGGER.info("Disabling valet mode")
+        vehicle_action = carserver.VehicleAction()
+        valet_action = carserver.VehicleControlSetValetModeAction()
+        valet_action.on = False
+        vehicle_action.vehicleControlSetValetModeAction.CopyFrom(valet_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def trigger_homelink(self, latitude: float, longitude: float) -> bool:
+        """Trigger HomeLink at the specified location.
+
+        Args:
+            latitude: GPS latitude.
+            longitude: GPS longitude.
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+
+        _LOGGER.info("Triggering HomeLink at (%f, %f)", latitude, longitude)
+        vehicle_action = carserver.VehicleAction()
+        homelink_action = carserver.VehicleControlTriggerHomelinkAction()
+        location = common.LatLong()
+        location.latitude = latitude
+        location.longitude = longitude
+        homelink_action.location.CopyFrom(location)
+        vehicle_action.vehicleControlTriggerHomelinkAction.CopyFrom(homelink_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def set_speed_limit(self, speed_limit_mph: float) -> bool:
+        """Set speed limit in MPH.
+
+        Args:
+            speed_limit_mph: Speed limit in miles per hour.
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+
+        _LOGGER.info("Setting speed limit to %.1f MPH", speed_limit_mph)
+        vehicle_action = carserver.VehicleAction()
+        limit_action = carserver.DrivingSetSpeedLimitAction()
+        limit_action.limitMph = speed_limit_mph
+        vehicle_action.drivingSetSpeedLimitAction.CopyFrom(limit_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def activate_speed_limit(self, pin: str) -> bool:
+        """Activate speed limit with PIN.
+
+        Args:
+            pin: The speed limit PIN.
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+
+        _LOGGER.info("Activating speed limit")
+        vehicle_action = carserver.VehicleAction()
+        speed_action = carserver.DrivingSpeedLimitAction()
+        speed_action.activate = True
+        speed_action.pin = pin
+        vehicle_action.drivingSpeedLimitAction.CopyFrom(speed_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def deactivate_speed_limit(self, pin: str) -> bool:
+        """Deactivate speed limit with PIN.
+
+        Args:
+            pin: The speed limit PIN.
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+
+        _LOGGER.info("Deactivating speed limit")
+        vehicle_action = carserver.VehicleAction()
+        speed_action = carserver.DrivingSpeedLimitAction()
+        speed_action.activate = False
+        speed_action.pin = pin
+        vehicle_action.drivingSpeedLimitAction.CopyFrom(speed_action)
+        response = await self._execute_carserver_action(vehicle_action)
+        return response is not None
+
+    async def set_guest_mode(self, enabled: bool) -> bool:
+        """Enable or disable guest mode.
+
+        Args:
+            enabled: True to enable, False to disable.
+        """
+        if carserver is None:
+            _LOGGER.error("Carserver not available")
+            return False
+
+        _LOGGER.info("Setting guest mode: %s", "on" if enabled else "off")
+        vehicle_action = carserver.VehicleAction()
+        guest_action = vehicle_pb.VehicleState.GuestMode()
+        guest_action.guestModeActive = enabled
+        vehicle_action.guestModeAction.CopyFrom(guest_action)
         response = await self._execute_carserver_action(vehicle_action)
         return response is not None
 
@@ -1128,3 +1271,30 @@ class TeslaBLEVehicle:
         if not success:
             _LOGGER.warning("Remove key from whitelist failed: %s", error_msg)
         return success
+
+    # Session persistence methods
+
+    def export_session(self) -> dict | None:
+        """Export session state for persistence.
+
+        This allows saving session state to storage and restoring it later,
+        avoiding the need to re-establish the session on each restart.
+
+        Returns:
+            Dict with session state, or None if no session is active.
+        """
+        return self._crypto.export_session()
+
+    def import_session(self, session_data: dict) -> bool:
+        """Import session state from persistence.
+
+        This restores a previously exported session, allowing continued
+        communication without re-establishing the session.
+
+        Args:
+            session_data: Dict with session state from export_session().
+
+        Returns:
+            True if session was successfully restored.
+        """
+        return self._crypto.import_session(session_data)

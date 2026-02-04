@@ -69,10 +69,23 @@ class SignatureData:
     counter: int = 0
     expires_at: int = 0
     tag: bytes = field(default_factory=bytes)
+    signer_public_key: bytes = field(default_factory=bytes)  # Our public key
 
     def to_proto(self) -> tesla_signatures_pb2.SignatureData:
-        """Convert to protobuf message."""
+        """Convert to protobuf message.
+
+        Includes signer identity (public key) as required by the protocol.
+        Reference: vehicle-command/internal/authentication/signer.go
+        """
         sig_data = tesla_signatures_pb2.SignatureData()
+
+        # Set signer identity with our public key
+        if self.signer_public_key:
+            key_identity = tesla_signatures_pb2.KeyIdentity()
+            key_identity.public_key = self.signer_public_key
+            sig_data.signer_identity.CopyFrom(key_identity)
+
+        # Set AES-GCM personalized signature data
         aes_gcm_data = tesla_signatures_pb2.AES_GCM_Personalized_Signature_Data()
         aes_gcm_data.epoch = self.epoch
         aes_gcm_data.nonce = self.nonce
@@ -85,6 +98,10 @@ class SignatureData:
     @classmethod
     def from_proto(cls, proto: tesla_signatures_pb2.SignatureData) -> SignatureData:
         """Create from protobuf message."""
+        signer_key = b""
+        if proto.HasField("signer_identity") and proto.signer_identity.HasField("public_key"):
+            signer_key = proto.signer_identity.public_key
+
         if proto.HasField("AES_GCM_Personalized_data"):
             aes_gcm_data = proto.AES_GCM_Personalized_data
             return cls(
@@ -93,8 +110,9 @@ class SignatureData:
                 counter=aes_gcm_data.counter,
                 expires_at=aes_gcm_data.expires_at,
                 tag=aes_gcm_data.tag,
+                signer_public_key=signer_key,
             )
-        return cls()
+        return cls(signer_public_key=signer_key)
 
 
 @dataclass

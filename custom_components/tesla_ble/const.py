@@ -44,6 +44,14 @@ RX_TIMEOUT: Final = 1.0  # seconds
 MAX_CLOCK_LATENCY: Final = 4  # seconds
 CONNECTION_TIMEOUT: Final = 30.0  # seconds
 
+# Message flags (bit positions from universal_message.proto Flags enum)
+FLAG_USER_COMMAND: Final = 0
+FLAG_ENCRYPT_RESPONSE: Final = 1
+
+# Default flags for RoutableMessage - request encrypted responses
+# Reference: vehicle-command/pkg/vehicle/vehicle.go DefaultFlags
+DEFAULT_FLAGS: Final = 1 << FLAG_ENCRYPT_RESPONSE  # = 2
+
 # Config keys
 CONF_VIN: Final = "vin"
 CONF_PRIVATE_KEY: Final = "private_key"
@@ -205,3 +213,24 @@ class GenericError(IntEnum):
     VEHICLE_NOT_IN_PARK = 5
     UNAUTHORIZED = 6
     NOT_ALLOWED_OVER_TRANSPORT = 7
+
+
+class MetadataTag(IntEnum):
+    """Metadata tags for authenticated message signing.
+
+    These tags are used in the metadata checksum computation that forms
+    the authenticated data (AD) for AES-GCM encryption.
+    Reference: vehicle-command/pkg/protocol/protobuf/signatures/signatures.proto
+    """
+
+    SIGNATURE_TYPE = 1
+    DOMAIN = 2
+    PERSONALIZATION = 3
+    EPOCH = 4
+    EXPIRES_AT = 5
+    COUNTER = 6
+    CHALLENGE = 7
+    FLAGS = 8
+    REQUEST_HASH = 11
+    FAULT = 14
+    END = 255

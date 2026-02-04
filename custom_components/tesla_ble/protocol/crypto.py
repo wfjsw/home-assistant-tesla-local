@@ -13,6 +13,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from ..const import Domain, MetadataTag, SignatureType
+
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ec import (
         EllipticCurvePrivateKey,
@@ -24,6 +26,94 @@ _LOGGER = logging.getLogger(__name__)
 # AES-GCM constants
 NONCE_LENGTH = 12
 TAG_LENGTH = 16
+
+
+class MetadataHasher:
+    """Compute metadata checksum for authenticated message signing.
+
+    This implements the metadata serialization format from the reference
+    implementation in vehicle-command/internal/authentication/metadata.go.
+    The checksum is used as the authenticated data (AD) for AES-GCM encryption.
+    """
+
+    def __init__(self) -> None:
+        """Initialize with SHA256 context."""
+        self._context = hashlib.sha256()
+        self._last_tag = 0
+
+    def add(self, tag: int, value: bytes | None) -> None:
+        """Add a (tag, value) pair to the metadata.
+
+        Tags must be added in increasing order. Values over 255 bytes
+        are rejected.
+        """
+        if value is None:
+            return
+        if tag < self._last_tag:
+            raise ValueError("Metadata tags must be added in increasing order")
+        if len(value) > 255:
+            raise ValueError("Metadata field too long (max 255 bytes)")
+
+        self._last_tag = tag
+        self._context.update(bytes([tag]))
+        self._context.update(bytes([len(value)]))
+        self._context.update(value)
+
+    def add_uint32(self, tag: int, value: int) -> None:
+        """Add a uint32 value (big-endian encoded)."""
+        self.add(tag, struct.pack(">I", value))
+
+    def checksum(self, message: bytes | None = None) -> bytes:
+        """Compute the final checksum.
+
+        Adds TAG_END marker and optional message before computing hash.
+        """
+        self._context.update(bytes([MetadataTag.END]))
+        if message:
+            self._context.update(message)
+        return self._context.digest()
+
+
+def compute_metadata_checksum(
+    domain: Domain,
+    epoch: bytes,
+    expires_at: int,
+    counter: int,
+    flags: int = 0,
+    personalization: bytes | None = None,
+) -> bytes:
+    """Compute metadata checksum for AES-GCM encryption.
+
+    This creates the authenticated data (AD) used in AES-GCM encryption,
+    following the reference implementation's extractMetadata() function.
+
+    Args:
+        domain: Message destination domain.
+        epoch: Session epoch (16 bytes).
+        expires_at: Message expiration timestamp.
+        counter: Message counter.
+        flags: Message flags (default 0).
+        personalization: Verifier name/personalization (optional).
+
+    Returns:
+        SHA256 hash of the metadata (32 bytes).
+    """
+    meta = MetadataHasher()
+
+    # Add fields in tag order (required by the protocol)
+    meta.add(MetadataTag.SIGNATURE_TYPE, bytes([SignatureType.AES_GCM_PERSONALIZED]))
+    meta.add(MetadataTag.DOMAIN, bytes([domain]))
+    if personalization:
+        meta.add(MetadataTag.PERSONALIZATION, personalization)
+    meta.add(MetadataTag.EPOCH, epoch)
+    meta.add_uint32(MetadataTag.EXPIRES_AT, expires_at)
+    meta.add_uint32(MetadataTag.COUNTER, counter)
+
+    # Flags are only added if non-zero (for backwards compatibility)
+    if flags > 0:
+        meta.add_uint32(MetadataTag.FLAGS, flags)
+
+    return meta.checksum(None)
 
 
 def generate_key_pair() -> tuple[bytes, bytes]:
@@ -245,6 +335,120 @@ class TeslaCrypto:
             "counter": counter,
             "expires_at": expires_at,
         }
+
+    def encrypt_with_metadata(
+        self,
+        plaintext: bytes,
+        domain: Domain,
+        flags: int = 0,
+        counter: int | None = None,
+        expiration_seconds: int = 15,
+    ) -> tuple[bytes, bytes, int, int]:
+        """Encrypt a message using AES-GCM with proper metadata authentication.
+
+        This computes the metadata checksum and uses it as associated data (AD)
+        for AES-GCM encryption, matching the reference implementation.
+
+        Args:
+            plaintext: The data to encrypt.
+            domain: Message destination domain.
+            flags: Message flags.
+            counter: Counter value to use. If None, increments and uses next counter.
+            expiration_seconds: Message expiration in seconds.
+
+        Returns:
+            Tuple of (ciphertext_with_tag, nonce, counter_used, expires_at)
+        """
+        if not self._session_key:
+            raise ValueError("No session key available")
+
+        if counter is None:
+            counter = self.increment_counter()
+
+        expires_at = self.get_current_timestamp() + expiration_seconds
+
+        # Compute metadata checksum for authenticated data
+        associated_data = compute_metadata_checksum(
+            domain=domain,
+            epoch=self._epoch,
+            expires_at=expires_at,
+            counter=counter,
+            flags=flags,
+        )
+
+        # Build nonce: 4-byte counter (little-endian) + 8 random bytes
+        counter_bytes = struct.pack("<I", counter)
+        random_bytes = os.urandom(8)
+        nonce = counter_bytes + random_bytes
+
+        aesgcm = AESGCM(self._session_key)
+        ciphertext = aesgcm.encrypt(nonce, plaintext, associated_data)
+
+        return ciphertext, nonce, counter, expires_at
+
+    def export_session(self) -> dict | None:
+        """Export session state for persistence.
+
+        This allows saving session state to disk and restoring it later,
+        avoiding the need to re-establish the session.
+
+        Returns:
+            Dict with session state, or None if no session is active.
+        """
+        if not self._session_key or not self._vehicle_public_key:
+            return None
+
+        # Get vehicle's public key bytes
+        vehicle_public_bytes = self._vehicle_public_key.public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint,
+        )
+
+        return {
+            "vehicle_public_key": vehicle_public_bytes.hex(),
+            "epoch": self._epoch.hex(),
+            "counter": self._counter,
+            "clock_time": self.get_current_timestamp(),
+        }
+
+    def import_session(self, session_data: dict) -> bool:
+        """Import session state from persistence.
+
+        This restores a previously exported session, allowing continued
+        communication without re-establishing the session.
+
+        Args:
+            session_data: Dict with session state from export_session().
+
+        Returns:
+            True if session was successfully restored.
+        """
+        try:
+            vehicle_public_key_bytes = bytes.fromhex(session_data["vehicle_public_key"])
+            epoch = bytes.fromhex(session_data["epoch"])
+            counter = session_data["counter"]
+            clock_time = session_data["clock_time"]
+
+            # Restore vehicle's public key and compute shared secret
+            self.set_vehicle_public_key(vehicle_public_key_bytes)
+
+            # Restore session parameters
+            self._epoch = epoch
+            self._counter = counter
+            # Compute clock offset from saved clock_time
+            self._clock_offset = int(time.time()) - clock_time
+
+            _LOGGER.debug(
+                "Session imported: epoch=%s, counter=%d, clock_offset=%d",
+                epoch.hex(),
+                counter,
+                self._clock_offset,
+            )
+            return True
+
+        except (KeyError, ValueError) as ex:
+            _LOGGER.error("Failed to import session: %s", ex)
+            return False
 
 
 def compute_vin_hash(vin: str) -> str:
